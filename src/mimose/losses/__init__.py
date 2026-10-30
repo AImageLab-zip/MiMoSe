@@ -1,4 +1,5 @@
 from mimose.losses.adamm import AdaMMLoss
+from mimose.losses.aloramoe import ALoRAMoELoss
 from mimose.losses.config import LossConfig, LossKind, build_loss_config
 from mimose.losses.imfuse import IMFuseLoss
 from mimose.losses.ims2trans import IMS2TransLoss
@@ -22,6 +23,7 @@ __all__ = [
     "LossConfig",
     "LossKind",
     "AdaMMLoss",
+    "ALoRAMoELoss",
     "IMFuseLoss",
     "IMS2TransLoss",
     "InOutFusionLoss",

@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from mimose.models.abstract_model import AbstractModel
+from mimose.models.region_utils import regions_to_label_one_hot
 
 num_modals = 4
 init_channels = 16
@@ -344,17 +345,18 @@ class MCPL(AbstractModel):
     similarity, and a reconstruction volume via voxel-to-modality-prototype
     similarity (the "resilience"/pretraining objective).
 
-    Legacy MCPL outputs 3 independent sigmoid channels (ET/TC/WT, BCE+Dice).
-    This port instead follows the single-label 4-class softmax convention
-    used by every other missing-modality model in this repo (ShaSpec, M3AE),
-    so it works with ``AbstractModel.predict``'s argmax-based contract and
-    ``BaseTrainer``'s shared evaluation utilities.
+    Like legacy MCPL (``CC_classes = 3``), the class prototypes are the three BraTS regions
+    ``[ET, TC, WT]``: each region's logit is the raw voxel-to-prototype cosine, trained with
+    ``EDiceLoss`` (sigmoid inside, so a region is predicted where its cosine is positive). Only at
+    the output boundary (``mode="segment"`` / ``predict``) are the thresholded regions turned into a
+    4-class one-hot label volume, so the framework's argmax-based evaluation applies unchanged.
     """
 
     def __init__(
         self,
         num_cls: int = 4,
         cc_modalities: int = 4,
+        cc_classes: int = 3,
         layers: int = 6,
         learnable_filler: bool = False,
         logit_scale: float = 1.0,
@@ -363,11 +365,11 @@ class MCPL(AbstractModel):
         self.num_cls = num_cls
         # Upstream fills missing modalities with a frozen all-zero `limage` (Unet_kmaxT.py:425).
         self.learnable_filler = learnable_filler
-        # Multiplier on the [-1, 1] voxel-prototype cosines before the softmax (1.0 = upstream scale).
+        # Multiplier on the [-1, 1] voxel-prototype cosines before the sigmoid (1.0 = upstream).
         self.logit_scale = float(logit_scale)
         self.cc_modalities = cc_modalities
-        self.cc_classes = num_cls
-        self.nums_q = cc_modalities * num_cls
+        self.cc_classes = cc_classes
+        self.nums_q = cc_modalities * cc_classes
 
         filler_shape = (1, num_modals, input_patch_size, input_patch_size, input_patch_size)
         if learnable_filler:
@@ -420,9 +422,9 @@ class MCPL(AbstractModel):
 
         # Prototype projection heads (legacy Unet_missing.__init__).
         self.row = Mlp(self.nums_q, 128, cc_modalities)
-        self.col = Mlp(self.nums_q, 128, num_cls)
-        self.col32 = Mlp(self.nums_q, 128, num_cls)
-        self.col64 = Mlp(self.nums_q, 128, num_cls)
+        self.col = Mlp(self.nums_q, 128, cc_classes)
+        self.col32 = Mlp(self.nums_q, 128, cc_classes)
+        self.col64 = Mlp(self.nums_q, 128, cc_classes)
 
         # Modality-reconstruction head (legacy UNet3D_g.make_decoder.head_reg).
         self.head_reg = nn.Conv3d(channels * cc_modalities, num_modals, kernel_size=1)
@@ -431,8 +433,6 @@ class MCPL(AbstractModel):
         # matching legacy ``ds_out``/``up_out``.
         self.ds_up4 = nn.Upsample(scale_factor=4, mode="trilinear", align_corners=True)
         self.ds_up3 = nn.Upsample(scale_factor=2, mode="trilinear", align_corners=True)
-
-        self.softmax = nn.Softmax(dim=1)
 
     def _encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         c1 = self.conv1b(self.conv1a(x))
@@ -502,7 +502,7 @@ class MCPL(AbstractModel):
             F.normalize(cc_class, p=2, dim=1).transpose(1, 2),
             F.normalize(u2, p=2, dim=1),
         )
-        return self.softmax(logits * self.logit_scale)
+        return logits * self.logit_scale
 
     def _deep_supervision_from_prototypes(
         self, cluster_centers: torch.Tensor, u4: torch.Tensor, u3: torch.Tensor
@@ -522,16 +522,15 @@ class MCPL(AbstractModel):
             F.normalize(cc32_class, p=2, dim=1).transpose(1, 2),
             F.normalize(self.ds_up3(u3), p=2, dim=1),
         )
-        return out4_logits, out3_logits
+        return out4_logits * self.logit_scale, out3_logits * self.logit_scale
 
     def forward(
         self, x: torch.Tensor, mask: torch.Tensor, mode: str = "segment"
     ) -> torch.Tensor | tuple[list[torch.Tensor], torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor]:
-        """``mode="segment"`` (default, used by ``predict``) returns the
-        softmax segmentation volume. ``mode="segment_train"`` additionally
-        returns the deep-supervision heads and the refined ``cluster_centers``
-        (needed by the trainer for the class-contrastive loss):
-        ``([uout, out3, out4], out4_logits, cluster_centers)``.
+        """``mode="segment"`` (default) returns the 4-class one-hot label volume,
+        ``mode="segment_logits"`` the ``[ET, TC, WT]`` region logits, and
+        ``mode="segment_train"`` the deep-supervision region logits in upstream order plus the
+        refined ``cluster_centers``: ``([out4, out3, uout], cluster_centers)``.
         ``mode="reconstruct"`` returns ``(reconstruction, cluster_centers)``
         (the latter needed for the modality-contrastive loss), reconstructing
         the original *unmasked* input from the masked one -- the pretraining
@@ -558,14 +557,10 @@ class MCPL(AbstractModel):
 
         if mode == "segment_train":
             out4_logits, out3_logits = self._deep_supervision_from_prototypes(cluster_centers, u4, u3)
-            seg_outputs = [
-                uout,
-                self.softmax(out3_logits * self.logit_scale),
-                self.softmax(out4_logits * self.logit_scale),
-            ]
-            return seg_outputs, out4_logits, cluster_centers
-
-        return uout
+            return [out4_logits, out3_logits, uout], cluster_centers
+        if mode == "segment_logits":
+            return uout
+        return regions_to_label_one_hot(uout, self.num_cls)
 
     def reconstruct(self, x: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Non-distributed convenience wrapper around
@@ -575,26 +570,28 @@ class MCPL(AbstractModel):
         return self(x, mask, mode="reconstruct")
 
     def predict(self, images: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Sliding window (50% overlap) averaging the region logits, as upstream's MONAI
+        ``sliding_window_inference`` does, then thresholded into labels."""
         _, _, height, width, depth = images.shape
-        if (height, width, depth) == (input_patch_size, input_patch_size, input_patch_size):
-            return self(images, mask)
-
         h_starts = self._window_starts(height)
         w_starts = self._window_starts(width)
         d_starts = self._window_starts(depth)
-        prediction = torch.zeros(images.size(0), self.num_cls, height, width, depth, device=images.device)
+        logits = torch.zeros(images.size(0), self.cc_classes, height, width, depth, device=images.device)
         weight = torch.zeros(images.size(0), 1, height, width, depth, device=images.device)
 
         for h in h_starts:
             for w in w_starts:
                 for d in d_starts:
-                    patch = images[:, :, h : h + input_patch_size, w : w + input_patch_size, d : d + input_patch_size]
-                    patch_pred = self(patch, mask)
-                    prediction[:, :, h : h + input_patch_size, w : w + input_patch_size, d : d + input_patch_size] += (
-                        patch_pred
+                    window = (
+                        slice(None),
+                        slice(None),
+                        slice(h, h + input_patch_size),
+                        slice(w, w + input_patch_size),
+                        slice(d, d + input_patch_size),
                     )
-                    weight[:, :, h : h + input_patch_size, w : w + input_patch_size, d : d + input_patch_size] += 1
-        return prediction / weight
+                    logits[window] += self(images[window], mask, mode="segment_logits").float()
+                    weight[window] += 1
+        return regions_to_label_one_hot(logits / weight, self.num_cls)
 
     @staticmethod
     def _window_starts(size: int) -> list[int]:

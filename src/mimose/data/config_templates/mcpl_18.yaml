@@ -1,11 +1,21 @@
 # Combined MCPL reference config for BraTS 2018.
-# MCPL shares its entire two-stage training harness (the `limage` learnable
-# placeholder for missing modalities, pretrain/finetune schedule, cross-view
-# consistency loss) with legacy M3AE -- see mimose.models.mcpl.MCPL's
-# docstring and the sibling m3ae_*.yaml templates. MCPL's own novel
-# contribution is the kMaX prototype-learning bottleneck and its
-# class/modality contrastive losses (custom_trainer_kwargs.
-# class_contrast_weight / modal_contrast_weight).
+# Same logic as legacy MCPL (legacy/MCPL pretrain.py / train.py), as one run:
+# - data: per-modality z-score of the nonzero voxels, background kept at 0
+#   (legacy zscore_normalise; norm_mode: subject_zscore_nonzero); uniform
+#   random 128^3 crops; missing modalities filled with frozen zeros.
+# - pretraining (first 600 of 1100 epochs): 2 crops per step, 87.5% of 16^3
+#   tokens plus up to 3 whole modalities masked, MSE reconstruction through the
+#   modality prototypes + 0.01 * modality contrast; Adam lr 3e-4, wd 0, cosine
+#   over 600 epochs.
+# - fine-tuning (last 500 epochs): fresh Adam lr 3e-4, wd 1e-4, cosine over 500
+#   epochs; each sample duplicated into 2 independently modality-masked views,
+#   filled, then augmented (per-slice/channel intensity, random flips); 3 region
+#   prototypes [ET, TC, WT] (CC_classes = 3), the raw voxel-prototype cosine is
+#   the sigmoid logit; EDiceLoss (0.7 Dice + 0.3 BCE) without deep supervision
+#   (legacy default), + 0.01 * class contrast, + 0.1 * legacy's consistency MSE,
+#   which (without deep supervision) compares the ET and TC maps of view 1.
+# - test: best-validation weights (final_from_best), sliding window averaging
+#   region logits, regions thresholded at 0.5 and nested into BraTS labels.
 #
 # Note: the current CLI still expects command-specific flat YAML files, so this
 # combined file is a reference/source-of-truth file rather than a single file
@@ -13,7 +23,7 @@
 
 # preprocess
 input_dir: /path/to/unpacked
-output_dir: /path/to/preprocessed/mcpl-preprocessed/
+output_dir: /path/to/preprocessed/mcpl-legacy-preprocessed/
 dataset_type: brats18
 
 crop_mode: non_empty
@@ -25,7 +35,7 @@ clamp_percentile: null
 clamp_min: null
 clamp_max: null
 
-norm_mode: subject_zscore
+norm_mode: subject_zscore_nonzero
 norm_min_max_range: null
 norm_mean: null
 norm_std: null
@@ -33,7 +43,7 @@ norm_std: null
 yes: false
 
 # training
-data_dir: /path/to/preprocessed/mcpl-preprocessed
+data_dir: /path/to/preprocessed/mcpl-legacy-preprocessed
 art_dir: /path/to/artifacts/mcpl18
 results_dir: /path/to/results/mcpl_18
 
@@ -44,45 +54,39 @@ loss: mcpl
 custom_model_kwargs:
   num_cls: 4
   cc_modalities: 4
+  cc_classes: 3
   layers: 6
   learnable_filler: false
   logit_scale: 1.0
 
 custom_loss_kwargs:
   num_classes: null
-  log_clamp_min: 0.005
 
 custom_trainer_kwargs:
   iter_per_epoch: null
   patch_size: 128
   debug: false
-  transform_kind: imfuse
   train_masking_mode: random
   val_masking_mode: validation
-  # Two-stage schedule matching legacy MCPL's separate pretrain.py (600
-  # epochs, modality-prototype-guided reconstruction, `limage` trained at
-  # limage_lr) and train.py (500 epochs, segmentation fine-tuning, `limage`
-  # frozen). Set to 0.0 to disable (single-stage).
-  pretrain_fraction: 0.5454545454545454
-  limage_lr: 0.005
-  # Deep supervision + cross-view consistency (legacy MCPL fine-tuning).
-  # Each step forwards a second, independently-masked view of the same
-  # crop; both views are deep-supervised and their coarse out4 logits are
-  # matched by consistency_weight * MSE (legacy weight_kl, feature_level=2).
-  deep_supervised: true
-  consistency_weight: 0.1
-  # Class/modality prototype contrastive terms on the model's own learned
-  # (modality x class) prototype table (legacy memory_Loss.forward_class_cos
-  # during fine-tuning, forward_modal_cos during pretraining).
-  class_contrast_weight: 0.01
-  modal_contrast_weight: 0.01
-  cc_modalities: 4
-  grad_clip_norm: null
-  skip_nonfinite_loss: true
+  # legacy MaskEmbeeding1(mdp=3): drop U{0..3} modalities.
   mask_sampling: count_uniform
+  pretrain_fraction: 0.5454545454545454
+  pretrain_samples_per_step: 2
+  limage_lr: 0.005
+  pretrain_weight_decay: 0.0
   mae_patch_masking: true
   mae_mask_ratio: 0.875
   mae_mdp: 3
+  views: 2
+  deep_supervised: false
+  consistency_weight: 0.1
+  class_contrast_weight: 0.01
+  modal_contrast_weight: 0.01
+  cc_modalities: 4
+  legacy_augment: true
+  final_from_best: true
+  grad_clip_norm: null
+  skip_nonfinite_loss: true
 
 optimizer: adam
 betas: [0.9, 0.999]
@@ -101,10 +105,10 @@ plateau_mode: null
 plateau_factor: null
 plateau_patience: null
 
-lr: 0.0012
+lr: 0.0003
 num_epochs: 1100
 validation_every: 10
-batch_size: 4
+batch_size: 1
 weight_decay: 0.0001
 num_workers: 8
 precision: fp32

@@ -1,0 +1,30 @@
+data:
+  root: data/brats2018
+  modalities: [T1, T1c, T2, FLAIR]
+  patch_size: [64, 64, 64]     # adjust to 128^3 for real training
+  val_ratio: 0.25
+  fold: 0
+  missing_drop_p: [0.2, 0.3, 0.4]
+
+model:
+  embed_dim: 64
+  depth: [1, 1, 2, 1]
+  num_heads: [2, 4, 4, 8]
+  moe:
+    num_experts: 4
+    top_k: 2
+  lora_r: 8
+  hgd:
+    codewords: 32
+  out_channels: 4
+
+train:
+  epochs: 50
+  batch_size: 1
+  lr: 3e-4
+  weight_decay: 5e-5
+  curriculum_epochs: [10, 30, 50]
+  amp: true
+
+infer:
+  sw_overlap: 0.5

@@ -5,8 +5,9 @@ from typing import ClassVar
 import torch
 import torch.nn.functional as F
 
-from mimose.losses.config import KwargField, positive_int, unit_interval_float
-from mimose.losses.imfuse import dice_loss, softmax_weighted_loss
+from mimose.losses.config import KwargField, positive_int
+from mimose.losses.edice import edice_loss, labels_to_regions
+from mimose.losses.m3ae import legacy_region_loss
 
 
 def _upstream_group_cos(h_i: torch.Tensor, h_j: torch.Tensor, temperature: float) -> torch.Tensor:
@@ -96,59 +97,39 @@ def mcpl_reconstruction_loss(
 
 
 class MCPLLoss:
-    """Loss wrapper for legacy MCPL's fine-tuning objective: softmax
-    cross-entropy + Dice segmentation loss (following the single-label
-    4-class convention shared with ``M3AELoss``/``ShaSpecLoss``), plus the
-    class-prototype contrastive term. The cross-view consistency MSE and the
-    class-contrastive weighting are added by ``MCPLTrainer`` (which owns the
-    two-view forward passes and has access to the model's prototype table),
-    not here. The pretraining stage uses ``mcpl_reconstruction_loss`` instead.
+    """Loss wrapper for legacy MCPL's fine-tuning segmentation objective, ``EDiceLoss`` (0.7 *
+    region Dice + 0.3 * BCE over the sigmoid ``[ET, TC, WT]`` cosine logits, see ``edice_loss``).
+    The consistency MSE and the class-prototype contrast are added by ``MCPLTrainer``; the
+    pretraining stage uses ``mcpl_reconstruction_loss`` instead.
+
+    ``segmentation_loss`` scores the 4-class one-hot volume returned by ``predict`` (validation
+    only, no gradient) with the same region objective (``legacy_region_loss``).
     """
 
     KWARG_SPEC: ClassVar[dict[str, KwargField]] = {
         "num_classes": positive_int(),
-        "log_clamp_min": unit_interval_float(),
     }
 
-    def __init__(
-        self,
-        *,
-        num_classes: int | None = None,
-        num_cls: int | None = None,
-        log_clamp_min: float = 0.005,
-    ) -> None:
-        resolved_num_classes = (
-            int(num_classes) if num_classes is not None else int(num_cls) if num_cls is not None else 4
-        )
-        self.num_classes = resolved_num_classes
-        self.log_clamp_min = float(log_clamp_min)
+    def __init__(self, *, num_classes: int | None = None, num_cls: int | None = None) -> None:
+        self.num_classes = int(num_classes) if num_classes is not None else int(num_cls) if num_cls is not None else 4
 
     def segmentation_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return self.softmax_weighted_loss(output, target) + self.dice_loss(output, target)
+        return legacy_region_loss(output, target)["loss"]
 
-    def dice_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return dice_loss(output, target, num_cls=self.num_classes, eps=1e-7)
-
-    def softmax_weighted_loss(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        return softmax_weighted_loss(output, target, num_cls=self.num_classes, log_clamp_min=self.log_clamp_min)
-
-    def training_loss(self, output: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:
-        cross = self.softmax_weighted_loss(output, target)
-        dice = self.dice_loss(output, target)
-        return {"loss": cross + dice, "cross": cross, "dice": dice}
+    def training_loss(self, region_logits: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:
+        return edice_loss(region_logits, labels_to_regions(target))
 
     def deep_supervised_training_loss(
         self, seg_outputs: list[torch.Tensor], target: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        """Sums the softmax cross-entropy + Dice loss over every
-        deep-supervision head, matching legacy MCPL's
-        ``for l in segs_S1: loss_ += criterion(l, labels_S1)``
-        (``legacy/MCPL/train.py:305-306``)."""
+        """``for l in segs_S1: loss_ += criterion(l, labels_S1)`` (``legacy/MCPL/train.py``)."""
+        regions = labels_to_regions(target)
         cross = target.new_tensor(0.0)
         dice = target.new_tensor(0.0)
         for output in seg_outputs:
-            cross = cross + self.softmax_weighted_loss(output, target)
-            dice = dice + self.dice_loss(output, target)
+            metrics = edice_loss(output, regions)
+            cross = cross + metrics["cross"]
+            dice = dice + metrics["dice"]
         return {"loss": cross + dice, "cross": cross, "dice": dice}
 
 

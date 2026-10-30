@@ -1,22 +1,23 @@
 # Combined M3AE reference config for BraTS 2025.
-# This mirrors legacy M3AE (legacy/m3ae, README commands) as closely as possible
-# under the MiMoSe API, keeping this framework's batch size and lr:
-# - pretraining (legacy pretrain.py, 600 epochs, wd 0): masked-autoencoder
-#   reconstruction with 87.5% of 16^3 tokens plus up to 3 whole modalities
-#   masked, `limage` template trained at limage_lr; its cosine schedule spans
-#   exactly the pretrain epochs (cosine_t_max). Here it is the first
-#   pretrain_fraction (600 of 900) epochs of a single run.
-# - fine-tuning (legacy train.py, 300 epochs, wd 1e-4): restarts the cosine
-#   schedule from the base lr, with deep supervision and a cross-view
-#   consistency MSE on the out4 logits (legacy weight_kl = 0.1).
-# - loss: legacy EDiceLoss (0.7 * squared-denominator region Dice + 0.3 * BCE
-#   over ET/TC/WT), computed on regions summed from the framework's 4-class
-#   softmax output (custom_loss_kwargs.formulation: legacy_region).
-# lr is upstream's 3e-4 @ batch 1 scaled linearly to batch 2.
-# Deviations: `limage` is a single 128^3 template, not a full-volume parameter
-# sliced at each crop location; the model outputs a 4-class softmax instead of
-# 3 sigmoid region channels; each dataset is pretrained on itself (legacy
-# reused its BraTS 2023 pretraining).
+# Same logic as legacy M3AE (legacy/m3ae, README commands), as one run:
+# - data: per-modality 1-99 percentile clip of the positive voxels + min-max to
+#   [0, 1] (legacy irm_min_max_preprocess; norm_mode: irm_min_max); uniform
+#   random 128^3 crops whose location slices the full-volume `limage`.
+# - pretraining (legacy pretrain.py, first 600 of 900 epochs): 2 crops per step
+#   (pretrain_samples_per_step), 87.5% of 16^3 tokens plus up to 3 whole
+#   modalities masked and filled from `limage`, MSE reconstruction + 0.005 *
+#   `limage` norm; Adam lr 3e-4 (limage 0.005), wd 0, cosine over 600 epochs.
+# - fine-tuning (legacy train.py, last 300 epochs): fresh Adam lr 3e-4, wd 1e-4,
+#   cosine over 300 epochs, `limage` frozen; each sample is duplicated into 2
+#   independently modality-masked views, filled from `limage`, then augmented
+#   (per-slice/channel intensity shift+scale, random flips); 3 sigmoid region
+#   heads [ET, TC, WT] with deep supervision, EDiceLoss (0.7 Dice + 0.3 BCE)
+#   summed over [out4, out3, uout] + 0.1 * MSE(out4 view 1, out4 view 2).
+# - test: best-validation weights (final_from_best), sliding window averaging
+#   region logits, regions thresholded at 0.5 and nested into BraTS labels.
+# Deviations: `limage` is sliced in brain-bbox coordinates in both training and
+# testing (legacy trains in absolute and tests in bbox coordinates); each
+# dataset is pretrained on itself (legacy reused its BraTS 2023 pretraining).
 #
 # Note: the current CLI still expects command-specific flat YAML files, so this
 # combined file is a reference/source-of-truth file rather than a single file
@@ -24,7 +25,7 @@
 
 # preprocess
 input_dir: /path/to/unpacked
-output_dir: /path/to/preprocessed/m3ae-preprocessed/
+output_dir: /path/to/preprocessed/m3ae-legacy-preprocessed/
 dataset_type: brats25
 
 crop_mode: non_empty
@@ -36,7 +37,7 @@ clamp_percentile: null
 clamp_min: null
 clamp_max: null
 
-norm_mode: subject_zscore
+norm_mode: irm_min_max
 norm_min_max_range: null
 norm_mean: null
 norm_std: null
@@ -44,7 +45,7 @@ norm_std: null
 yes: false
 
 # training
-data_dir: /path/to/preprocessed/m3ae-preprocessed
+data_dir: /path/to/preprocessed/m3ae-legacy-preprocessed
 art_dir: /path/to/artifacts/m3ae25
 results_dir: /path/to/results/m3ae_25
 
@@ -53,39 +54,33 @@ model: m3ae
 loss: m3ae
 
 custom_model_kwargs:
-  num_cls: 5
+  num_cls: 4
+  num_regions: 3
+  template_shape: [240, 240, 155]
 
 custom_loss_kwargs:
-  log_clamp_min: 0.005
-  formulation: legacy_region
+  num_classes: null
 
 custom_trainer_kwargs:
   iter_per_epoch: null
   patch_size: 128
   debug: false
-  transform_kind: imfuse
   train_masking_mode: random
   val_masking_mode: validation
-  # Two-stage schedule matching legacy M3AE's separate pretrain.py/train.py:
-  # the first pretrain_fraction of num_epochs reconstructs the (masked) input
-  # and trains `limage` at limage_lr; the rest freezes `limage` and trains
-  # segmentation as usual. Set to 0.0 to disable (single-stage, as before).
-  pretrain_fraction: 0.6667
+  # legacy MaskEmbeeding1(mdp=3): drop U{0..3} modalities.
+  mask_sampling: count_uniform
+  pretrain_fraction: 0.6666666666666666
+  pretrain_samples_per_step: 2
   limage_lr: 0.005
   limage_reg_weight: 0.005
   pretrain_weight_decay: 0.0
-  # Deep supervision + cross-view consistency (legacy M3AE fine-tuning).
-  # Each step forwards a second, independently-masked view of the same
-  # crop; both views are deep-supervised and their coarse out4 logits are
-  # matched by consistency_weight * MSE (legacy weight_kl, feature_level=2).
-  # consistency_weight: 0.0 keeps deep supervision but drops the 2nd view;
-  # deep_supervised: false falls back to plain single-output Dice+CE.
-  deep_supervised: true
-  consistency_weight: 0.1
-  mask_sampling: count_uniform
   mae_patch_masking: true
   mae_mask_ratio: 0.875
   mae_mdp: 3
+  views: 2
+  consistency_weight: 0.1
+  legacy_augment: true
+  final_from_best: true
   grad_clip_norm: null
   skip_nonfinite_loss: true
 
@@ -106,10 +101,10 @@ plateau_mode: null
 plateau_factor: null
 plateau_patience: null
 
-lr: 0.0006
+lr: 0.0003
 num_epochs: 900
 validation_every: 10
-batch_size: 2
+batch_size: 1
 weight_decay: 0.0001
 num_workers: 8
 precision: fp32

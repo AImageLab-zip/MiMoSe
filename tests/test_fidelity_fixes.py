@@ -121,8 +121,9 @@ def test_finetune_stage_restarts_at_base_lr_after_pretrain_cosine_hits_zero(cls,
 
     trainer._apply_training_stage(pretrain_epochs)
 
+    # Upstream fine-tunes with a fresh Adam over everything but the missing-modality filler.
     lrs = [group["lr"] for group in trainer.optimizer.param_groups]
-    assert lrs == pytest.approx([1e-3, 0.005])
+    assert lrs == pytest.approx([1e-3, 0.0])
     trainer.scheduler.step()
     assert trainer.optimizer.param_groups[0]["lr"] > 0
 
@@ -272,13 +273,13 @@ def test_mcpl_missing_modality_filler_is_frozen_zeros_by_default() -> None:
     assert torch.count_nonzero(model.limage) == 0
 
 
-def test_m3ae_default_init_does_not_saturate_the_softmax() -> None:
+def test_m3ae_default_init_does_not_saturate_the_region_sigmoids() -> None:
     torch.manual_seed(0)
     model = M3AE(num_cls=4).eval()
     images = torch.randn(1, 4, m3ae_patch, m3ae_patch, m3ae_patch)
     with torch.no_grad():
-        probs = model(images, torch.ones(1, 4, dtype=torch.bool))
-    assert probs.max(dim=1).values.mean().item() < 0.8
+        logits = model(images, torch.ones(1, 4, dtype=torch.bool), mode="segment_logits")
+    assert logits.abs().mean().item() < 2.0
 
 
 def test_uhved_init_keeps_instance_norm_affine_identity() -> None:

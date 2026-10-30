@@ -361,19 +361,23 @@ def collect_points(x_key="lat_gpu", *, x_scale=1.0, expected_folds=None, groups=
     return points, families
 
 
-def render_pareto_plot(points, families, *, x_label, out_path):
+def render_pareto_plot(points, families, *, x_label, out_path, y_label="Average Dice (%)", x_log=False):
     """Draw the overview + zoom-inset scatter for already-collected points and
     write it to `out_path`. Shared by this script and its fold1-only
     latency/FLOPs counterparts (generate_pareto_plot_latency_fold1.py,
     generate_pareto_plot_flops_fold1.py) so all three stay visually identical
     and only differ in what goes on the x axis."""
     frontier = set(pareto_frontier(points))
-    dense_names, dense_bbox = find_dense_cluster(points)
+    # On a log x axis the points spread out enough to label in place, and
+    # find_dense_cluster's linear normalization would pick the wrong cluster.
+    dense_names, dense_bbox = (None, None) if x_log else find_dense_cluster(points)
     dense_set = set(dense_names or [])
     sparse_names = [n for n in points if n not in dense_set]
 
     fig, ax = plt.subplots(figsize=(12.5, 9.5), facecolor="white")
     ax.set_facecolor("white")
+    if x_log:
+        ax.set_xscale("log")
 
     # Every point gets its marker on the overview; only the sparse ones get
     # an on-canvas label -- the dense cluster's labels move into the inset.
@@ -385,7 +389,7 @@ def render_pareto_plot(points, families, *, x_label, out_path):
         ax.plot(fx, fy, color=FRONTIER_COLOR, linestyle="--", linewidth=1.1, alpha=0.55, zorder=2)
 
     ax.set_xlabel(x_label, fontsize=15)
-    ax.set_ylabel("Average Dice (%)", fontsize=15)
+    ax.set_ylabel(y_label, fontsize=15)
     ax.tick_params(axis="both", labelsize=12)
     style_axes(ax)
 

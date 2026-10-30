@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +7,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-from mimose.datasets import IMFuseDataset, MaskingMode
+from mimose.datasets import MaskingMode
+from mimose.datasets.legacy_crop import LocatedCropDataset
 from mimose.datasets.base import sample_count_uniform_mask
 from mimose.datasets.imfuse import MASK_PATTERNS
 from mimose.enums import Precision, TransformKind
@@ -16,9 +16,9 @@ from mimose.losses.config import LossConfig
 from mimose.losses.m3ae import m3ae_reconstruction_loss
 from mimose.models.config import ModelConfig
 from mimose.training.config import OptimizerConfig, SchedulerConfig
+from mimose.training.legacy_augment import legacy_intensity_flip
 from mimose.training.masking import mae_patch_gate
 from mimose.training.trainers.base_trainer import BaseTrainer
-from mimose.training.transforms import build_transform_manager
 from mimose.training.transforms.base_transforms import TransformManager
 
 DEFAULT_PATCH_SIZE = 128
@@ -67,20 +67,18 @@ class M3AETrainer(BaseTrainer):
         self.best_val_dice = float("-inf")
         self._train_iterator: Any | None = None
 
-        # Legacy M3AE fine-tuning uses deep supervision plus a cross-view
-        # consistency term: two independently-masked views of the same crop are
-        # forwarded, both supervised (deep-supervised Dice+CE), and their coarse
-        # ``out4`` logits are pulled together by an MSE (legacy weight_kl,
-        # feature_level=2). ``consistency_weight`` == 0 keeps deep supervision
-        # but drops the second view/MSE; ``deep_supervised`` == False falls back
-        # to the plain single-output Dice+CE.
-        self.deep_supervised = bool(trainer_kwargs.get("deep_supervised", True))
-        self.consistency_weight = float(trainer_kwargs.get("consistency_weight", 1.0))
+        # Legacy train.py: each loader sample (batch 1) is duplicated into ``views`` (upstream
+        # --batch_size 2) independently modality-masked copies, deep-supervised with EDiceLoss over
+        # the duplicated batch, and their ``out4`` logits are pulled together by
+        # ``consistency_weight`` * MSE (upstream --weight_kl 0.1, feature_level 2).
+        self.views = int(trainer_kwargs.get("views", 2))
+        self.consistency_weight = float(trainer_kwargs.get("consistency_weight", 0.1))
+        # Upstream fills missing modalities first, then augments (intensity + flips, no rotation).
+        self.legacy_augment = bool(trainer_kwargs.get("legacy_augment", True))
 
-        # Two-stage schedule matching legacy M3AE's separate pretrain.py (MAE-style
-        # reconstruction, ``limage`` trained at its own higher LR) and train.py
-        # (segmentation fine-tuning, ``limage`` frozen). Disabled by default
-        # (pretrain_fraction=0.0) to keep existing single-stage configs unchanged.
+        # Two-stage schedule matching legacy M3AE's separate pretrain.py (MAE reconstruction,
+        # ``limage`` trained at its own LR) and train.py (segmentation, fresh Adam without
+        # ``limage``). Disabled by default (pretrain_fraction=0.0).
         self.pretrain_fraction = float(trainer_kwargs.get("pretrain_fraction", 0.0))
         if not 0.0 <= self.pretrain_fraction <= 1.0:
             raise ValueError("pretrain_fraction must be within [0, 1]")
@@ -91,10 +89,14 @@ class M3AETrainer(BaseTrainer):
         # None keeps the optimizer's weight_decay for both stages.
         pretrain_weight_decay = trainer_kwargs.get("pretrain_weight_decay")
         self.pretrain_weight_decay = None if pretrain_weight_decay is None else float(pretrain_weight_decay)
+        # Upstream pretrain.py loads --batch_size 2 independent crops per step, while train.py loads 1.
+        self.pretrain_samples_per_step = int(trainer_kwargs.get("pretrain_samples_per_step", 1))
         # Upstream pretrain.py: 87.5% of 16^3 tokens masked plus up to 3 whole modalities (mdp=3).
         self.mae_patch_masking = bool(trainer_kwargs.get("mae_patch_masking", True))
         self.mae_mask_ratio = float(trainer_kwargs.get("mae_mask_ratio", 0.875))
         self.mae_mdp = int(trainer_kwargs.get("mae_mdp", 3))
+        # Upstream test.py evaluates the best-validation checkpoint (best.pth.tar).
+        self.final_from_best = bool(trainer_kwargs.get("final_from_best", False))
         self._in_pretrain: bool | None = None
 
         effective_batch_size = 1 if batch_size is None else batch_size
@@ -158,10 +160,10 @@ class M3AETrainer(BaseTrainer):
         return self.optimizer
 
     def _apply_training_stage(self, epoch: int) -> None:
-        """Resume-safe pretrain/finetune stage switch, mirroring
-        ``LCKDTrainer._apply_training_phase``: stage membership is a pure
-        function of ``epoch``, so it's always correctly recomputed on resume
-        without needing to persist any stage state in the checkpoint."""
+        """Resume-safe pretrain/finetune stage switch: stage membership is a pure function of
+        ``epoch``. Entering fine-tuning reproduces upstream's fresh ``train.py`` optimizer: Adam
+        moments cleared, ``limage`` frozen and left out (lr 0), the fine-tuning weight decay, and a
+        new cosine schedule over the remaining epochs starting from the base lr."""
         if self.pretrain_epochs == 0:
             return
 
@@ -179,18 +181,16 @@ class M3AETrainer(BaseTrainer):
             for group in self.optimizer.param_groups:
                 group["weight_decay"] = weight_decay
 
-        if entering_finetune and self.scheduler_config is not None:
-            # Legacy runs two independent CosineAnnealingLR schedules (one per
-            # script/stage); reproduce that by restarting the anneal over the
-            # remaining epochs once fine-tuning begins. The LRs must be reset first:
-            # chainable schedulers otherwise continue from the decayed value.
-            self._reset_param_group_lrs([self.optimizer_config.lr, self.limage_lr])
-            remaining_epochs = self.num_epochs - self.pretrain_epochs
-            previous_t_max = self.scheduler_config.kwargs.get("T_max")
-            self.scheduler_config.kwargs["T_max"] = remaining_epochs
-            self._build_scheduler(self.optimizer)
-            if previous_t_max is not None:
-                self.scheduler_config.kwargs["T_max"] = previous_t_max
+        if entering_finetune and self.optimizer is not None:
+            self.optimizer.state.clear()
+            self._reset_param_group_lrs([self.optimizer_config.lr, 0.0])
+            if self.scheduler_config is not None:
+                remaining_epochs = self.num_epochs - self.pretrain_epochs
+                previous_t_max = self.scheduler_config.kwargs.get("T_max")
+                self.scheduler_config.kwargs["T_max"] = remaining_epochs
+                self._build_scheduler(self.optimizer)
+                if previous_t_max is not None:
+                    self.scheduler_config.kwargs["T_max"] = previous_t_max
 
     def train_epoch(self, epoch: int) -> dict[str, float]:
         if self.train_loader is None:
@@ -199,8 +199,13 @@ class M3AETrainer(BaseTrainer):
         self._apply_training_stage(epoch)
 
         self.model.train()
-        steps = self.iter_per_epoch if self.iter_per_epoch is not None else len(self.train_loader)
         in_pretrain = bool(self._in_pretrain)
+        samples_per_step = self.pretrain_samples_per_step if in_pretrain else 1
+        steps = (
+            self.iter_per_epoch
+            if self.iter_per_epoch is not None
+            else max(len(self.train_loader) // samples_per_step, 1)
+        )
         totals = (
             {"loss": 0.0, "recon": 0.0, "smoothness": 0.0}
             if in_pretrain
@@ -318,25 +323,20 @@ class M3AETrainer(BaseTrainer):
         if self.train_split is None or self.val_split is None:
             raise RuntimeError("train_split and val_split must be loaded before building datasets")
 
-        transform_manager = self.transform_manager
-        if transform_manager is None:
-            transform_manager = build_transform_manager(
-                self.transform_kind,
-                model_kwargs=(self.model_config.kwargs if self.model_config is not None else None),
-                crop_size=(self.patch_size, self.patch_size, self.patch_size),
-            )
-        train_set = IMFuseDataset(
+        # Upstream: a uniform random patch inside the brain bounding box, with its location kept to
+        # slice ``limage``; augmentation happens in the trainer, after the missing modalities are filled.
+        train_set = LocatedCropDataset(
             root=self.input_dir,
             masking_mode=self.train_masking_mode,
             split=self.train_split,
-            sample_transform=partial(transform_manager, mode="train"),
             mask_sampling=self.mask_sampling,
+            crop_size=self.patch_size,
         )
-        val_set = IMFuseDataset(
+        val_set = LocatedCropDataset(
             root=self.input_dir,
             masking_mode=self.val_masking_mode,
             split=self.val_split,
-            sample_transform=partial(transform_manager, mode="test"),
+            crop_size=None,
         )
         return train_set, val_set
 
@@ -355,25 +355,24 @@ class M3AETrainer(BaseTrainer):
         )
         return payload
 
-    def _center_crop_to_patch(self, images: torch.Tensor) -> torch.Tensor:
-        """The pretraining reconstruction head (unlike ``predict``) requires
-        inputs at exactly ``patch_size`` in every spatial dimension, but the
-        val split's "test" transform leaves images at their native
-        (uncropped) size. Deterministically center-crop to match, since
-        pretrain validation only needs a representative patch, not full
-        spatial coverage."""
+    def save_final_checkpoint(self) -> Path:
+        best_path = self.checkpoint_dir / "best.pth"
+        if self.final_from_best and best_path.is_file() and self.is_main_process:
+            checkpoint = torch.load(best_path, map_location=self.device, weights_only=False)
+            self._model_for_state().load_state_dict(checkpoint["state_dict"])
+        return super().save_final_checkpoint()
+
+    def _center_crop_start(self, images: torch.Tensor) -> list[int]:
+        """The pretraining reconstruction head requires inputs at exactly ``patch_size``, but the
+        val split is uncropped; pretrain validation only needs a representative centred patch."""
         patch = self.patch_size
         spatial_shape = images.shape[-3:]
-        if tuple(spatial_shape) == (patch, patch, patch):
-            return images
         if any(dim < patch for dim in spatial_shape):
             raise RuntimeError(
                 f"M3AE pretrain validation requires spatial dimensions of at least "
                 f"{(patch, patch, patch)}, got {tuple(spatial_shape)}"
             )
-        starts = [(dim - patch) // 2 for dim in spatial_shape]
-        h0, w0, d0 = starts
-        return images[:, :, h0 : h0 + patch, w0 : w0 + patch, d0 : d0 + patch]
+        return [(dim - patch) // 2 for dim in spatial_shape]
 
     def _pretrain_val_epoch(self, epoch: int) -> dict[str, float]:
         assert self.val_loader is not None
@@ -381,6 +380,7 @@ class M3AETrainer(BaseTrainer):
         self.model.eval()
         loss_sum = 0.0
         sample_count = 0
+        patch = self.patch_size
 
         with torch.no_grad():
             with self._progress(disable=not self.is_main_process) as progress:
@@ -393,11 +393,13 @@ class M3AETrainer(BaseTrainer):
                 for batch in self.val_loader:
                     images = batch["images"].to(self.device, non_blocking=True)
                     mask = batch["mask"].to(self.device, non_blocking=True).bool()
-                    images = self._center_crop_to_patch(images)
+                    h0, w0, d0 = self._center_crop_start(images)
+                    images = images[:, :, h0 : h0 + patch, w0 : w0 + patch, d0 : d0 + patch]
+                    location = torch.tensor([[h0, w0, d0]] * images.shape[0], dtype=torch.long)
 
                     model = self._model_for_state()
                     with self._autocast_context():
-                        recon = model.reconstruct(images, mask)
+                        recon = model.reconstruct(images, mask, location=location)
                         metrics = m3ae_reconstruction_loss(
                             recon, images, model.limage, reg_weight=self.limage_reg_weight
                         )
@@ -418,8 +420,10 @@ class M3AETrainer(BaseTrainer):
         return {"loss": loss_sum / max(sample_count, 1)}
 
     def _pretrain_step(self, batch: dict[str, Any]) -> dict[str, float]:
-        images = batch["images"].to(self.device, non_blocking=True)
-        mask = batch["mask"].to(self.device, non_blocking=True).bool()
+        batches = [batch] + [self._next_train_batch() for _ in range(self.pretrain_samples_per_step - 1)]
+        images = torch.cat([item["images"] for item in batches]).to(self.device, non_blocking=True)
+        mask = torch.cat([item["mask"] for item in batches]).to(self.device, non_blocking=True).bool()
+        location = torch.cat([item["location"] for item in batches])
         if self.mae_patch_masking:
             mask = mae_patch_gate(
                 images.shape[0],
@@ -433,7 +437,7 @@ class M3AETrainer(BaseTrainer):
             # Go through self.model(...) (not the DDP-unwrapped module) so
             # DistributedDataParallel's gradient-sync hooks stay attached for
             # the subsequent backward pass; see M3AE.forward's docstring.
-            recon = self.model(images, mask, mode="reconstruct")
+            recon = self.model(images, mask, mode="reconstruct", location=location)
             limage = self._model_for_state().limage
             metrics = m3ae_reconstruction_loss(recon, images, limage, reg_weight=self.limage_reg_weight)
             loss = metrics["loss"]
@@ -446,8 +450,7 @@ class M3AETrainer(BaseTrainer):
         }
 
     def _random_view_mask(self, reference_mask: torch.Tensor) -> torch.Tensor:
-        """Sample a fresh per-sample missing-modality mask for the second view,
-        drawn from the same distribution the RANDOM dataset masking uses."""
+        """A fresh per-sample missing-modality mask, from the same distribution the dataset uses."""
         if self.mask_sampling == "count_uniform":
             masks = torch.stack(
                 [sample_count_uniform_mask(reference_mask.shape[1]) for _ in range(reference_mask.shape[0])]
@@ -456,38 +459,46 @@ class M3AETrainer(BaseTrainer):
         indices = torch.randint(len(MASK_PATTERNS), size=(reference_mask.shape[0],))
         return MASK_PATTERNS[indices].to(device=reference_mask.device, dtype=reference_mask.dtype)
 
+    def _build_views(
+        self, images: torch.Tensor, seg: torch.Tensor, mask: torch.Tensor, location: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Upstream ``inputs_S1.repeat(batch_size)``: ``views`` copies of each sample, each with its
+        own modality mask filled from ``limage`` at the crop location, then augmented together.
+        Returns view-major ``[views * B, ...]`` images and labels."""
+        model = self._model_for_state()
+        view_images = []
+        with torch.no_grad():
+            for view in range(self.views):
+                view_mask = mask if view == 0 else self._random_view_mask(mask)
+                view_images.append(model.fill_missing(images, view_mask, location))
+        stacked = torch.stack(view_images, dim=1)  # [B, V, C, ...]
+        labels = seg.unsqueeze(1).expand(-1, self.views, *seg.shape[1:])
+        if self.legacy_augment:
+            augmented = [legacy_intensity_flip(stacked[b], labels[b]) for b in range(stacked.shape[0])]
+            stacked = torch.stack([item[0] for item in augmented])
+            labels = torch.stack([item[1] for item in augmented])
+        return stacked.transpose(0, 1).flatten(0, 1), labels.transpose(0, 1).flatten(0, 1)
+
     def _train_step(self, batch: dict[str, Any]) -> dict[str, float]:
         images = batch["images"].to(self.device, non_blocking=True)
-        seg = batch["seg"].to(self.device, non_blocking=True).long()
+        seg = batch["seg"].to(self.device, non_blocking=True).float()
         mask = batch["mask"].to(self.device, non_blocking=True).bool()
+        location = batch["location"]
+        batch_size = images.shape[0]
+
+        view_images, view_seg = self._build_views(images, seg, mask, location)
+        filled = torch.ones(view_images.shape[0], view_images.shape[1], dtype=torch.bool, device=self.device)
         with self._autocast_context():
-            target = self._seg_to_one_hot(seg)
-
-            if not self.deep_supervised:
-                output = self.model(images, mask)
-                metrics = self._loss_impl().training_loss(output, target)
-                loss = metrics["loss"]
-                cross, dice = metrics["cross"], metrics["dice"]
-                consistency = images.new_tensor(0.0)
-            else:
-                loss_impl = self._loss_impl()
-                seg_outputs, out4_logits = self.model(images, mask, mode="segment_train")
-                first = loss_impl.deep_supervised_training_loss(seg_outputs, target)
-                loss, cross, dice = first["loss"], first["cross"], first["dice"]
-                consistency = images.new_tensor(0.0)
-
-                if self.consistency_weight > 0:
-                    # Second independently-masked view of the same crop; both
-                    # views are supervised (legacy trains over the doubled
-                    # batch) and their out4 logits are matched by MSE.
-                    view2_mask = self._random_view_mask(mask)
-                    seg_outputs2, out4_logits2 = self.model(images, view2_mask, mode="segment_train")
-                    second = loss_impl.deep_supervised_training_loss(seg_outputs2, target)
-                    loss = loss + second["loss"]
-                    cross = cross + second["cross"]
-                    dice = dice + second["dice"]
-                    consistency = F.mse_loss(out4_logits, out4_logits2)
-                    loss = loss + (self.consistency_weight * consistency)
+            target = self._seg_to_one_hot(view_seg.round().long())
+            seg_outputs = self.model(view_images, filled, mode="segment_train")
+            metrics = self._loss_impl().deep_supervised_training_loss(seg_outputs, target)
+            loss, cross, dice = metrics["loss"], metrics["cross"], metrics["dice"]
+            consistency = images.new_tensor(0.0)
+            if self.consistency_weight > 0 and self.views > 1:
+                # Upstream feature_level=2: style[3] is out4, compared between the two views.
+                out4 = seg_outputs[0].float().unflatten(0, (self.views, batch_size))
+                consistency = F.mse_loss(out4[0], out4[1])
+                loss = loss + self.consistency_weight * consistency
 
         self._backward_step(loss)
         return {

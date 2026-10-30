@@ -304,3 +304,19 @@ class TinyMimosaTransformManager(TransformManager):
                 flip_probabilities=(0.0, 0.0, 0.0),
             ),
         }
+
+
+class ALoRAMoETransformManager(IMFuseTransformManager):
+    """Legacy ALoRA-MoE augmentation (``lora_moe_hgd/transforms.random_flip``): a random crop plus
+    independent p=0.5 flips on each spatial axis; no rotation or intensity jitter."""
+
+    def _setup_transforms(self) -> None:
+        super()._setup_transforms()
+        self.train_transforms = {
+            "paired": IMFuseTransform(
+                crop_size=self.crop_size,
+                rotation_degrees=0.0,
+                intensity_factors=(0.0, 0.0),
+                flip_probabilities=(0.5, 0.5, 0.5),
+            ),
+        }

@@ -790,6 +790,7 @@ def _build_trainer_instance_from_merged(merged: dict[str, object]):
     )
     from mimose.training.trainers import (
         AdaMMTrainer,
+        ALoRAMoETrainer,
         DCSegTrainer,
         IMFuseTrainer,
         IMS2TransTrainer,
@@ -843,6 +844,7 @@ def _build_trainer_instance_from_merged(merged: dict[str, object]):
         TrainerKind.PARETO: ParetoTrainer,
         TrainerKind.ADAMM: AdaMMTrainer,
         TrainerKind.NAPSCAF: NAPSCAFTrainer,
+        TrainerKind.ALORAMOE: ALoRAMoETrainer,
     }
     try:
         trainer_class = trainer_map[trainer_kind]
@@ -872,6 +874,7 @@ def _build_trainer_instance_from_merged(merged: dict[str, object]):
         TrainerKind.PARETO: TrainingModelKind.ELASTICUNET,
         TrainerKind.ADAMM: TrainingModelKind.ADAMM,
         TrainerKind.NAPSCAF: TrainingModelKind.NAPSCAF,
+        TrainerKind.ALORAMOE: TrainingModelKind.ALORAMOE,
     }
     default_loss_map = {
         TrainerKind.UHVED: "uhved",
@@ -892,6 +895,7 @@ def _build_trainer_instance_from_merged(merged: dict[str, object]):
         TrainerKind.PARETO: "tinymimosa",
         TrainerKind.ADAMM: "adamm",
         TrainerKind.NAPSCAF: "napscaf",
+        TrainerKind.ALORAMOE: "aloramoe",
     }
     default_model = default_model_map.get(trainer_kind, TrainingModelKind.IMFUSE)
     default_loss = default_loss_map.get(trainer_kind, "imfuse")

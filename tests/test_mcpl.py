@@ -44,8 +44,8 @@ def test_mcpl_substitutes_missing_modalities_with_learned_embedding() -> None:
     one_missing = torch.tensor([[True, True, True, False]])
 
     with torch.no_grad():
-        out_full = model(images, all_present)
-        out_missing = model(images, one_missing)
+        out_full = model(images, all_present, mode="segment_logits")
+        out_missing = model(images, one_missing, mode="segment_logits")
 
     assert torch.isfinite(out_missing).all()
     assert not torch.allclose(out_full, out_missing)
@@ -58,12 +58,14 @@ def test_mcpl_segment_train_returns_deep_supervision_heads_and_prototypes() -> N
     mask = torch.ones(1, 4, dtype=torch.bool)
 
     with torch.no_grad():
-        seg_outputs, out4_logits, cluster_centers = model(images, mask, mode="segment_train")
+        seg_outputs, cluster_centers = model(images, mask, mode="segment_train")
 
     assert len(seg_outputs) == 3
     for output in seg_outputs:
-        assert output.shape == (1, 4, input_patch_size, input_patch_size, input_patch_size)
-    assert out4_logits.shape == (1, 4, input_patch_size, input_patch_size, input_patch_size)
+        assert output.shape == (1, 3, input_patch_size, input_patch_size, input_patch_size)
+        # Raw voxel-prototype cosines, as upstream feeds them to the sigmoid.
+        assert output.abs().max() <= 1.0 + 1e-5
+    assert model.nums_q == 12
     assert cluster_centers.shape == (1, 128, model.nums_q)
 
 
@@ -135,7 +137,7 @@ def test_mcpl_predict_slides_over_larger_volumes() -> None:
         pred = model.predict(images, mask)
 
     assert pred.shape == (1, 4, 160, 160, 160)
-    assert torch.isfinite(pred).all()
+    assert torch.equal(pred.sum(dim=1), torch.ones(1, 160, 160, 160))
 
 
 def test_mcpl_resolves_from_model_config_builder() -> None:
@@ -159,7 +161,7 @@ def test_mcpl_deep_supervised_training_loss_end_to_end() -> None:
     mask = torch.ones(1, 4, dtype=torch.bool)
     target = _random_target(batch=1, num_classes=4, size=input_patch_size)
 
-    seg_outputs, _, _ = model(images, mask, mode="segment_train")
+    seg_outputs, _ = model(images, mask, mode="segment_train")
     loss_fn = MCPLLoss(num_classes=4)
     metrics = loss_fn.deep_supervised_training_loss(seg_outputs, target)
 
@@ -171,8 +173,8 @@ def test_mcpl_class_and_modal_contrastive_losses_are_finite() -> None:
     torch.manual_seed(0)
     model = MCPL(num_cls=4, layers=1)
 
-    class_loss = class_contrastive_loss(model._cluster_centers.weight, cc_modalities=4, cc_classes=4)
-    modal_loss = modal_contrastive_loss(model._cluster_centers.weight, cc_modalities=4, cc_classes=4)
+    class_loss = class_contrastive_loss(model._cluster_centers.weight, cc_modalities=4, cc_classes=3)
+    modal_loss = modal_contrastive_loss(model._cluster_centers.weight, cc_modalities=4, cc_classes=3)
 
     assert torch.isfinite(class_loss)
     assert torch.isfinite(modal_loss)
@@ -186,11 +188,11 @@ def test_mcpl_reconstruction_loss_combines_mse_and_modal_contrast() -> None:
 
     recon, cluster_centers = model(images, mask, mode="reconstruct")
     metrics = mcpl_reconstruction_loss(
-        recon, images, model._cluster_centers.weight, cc_modalities=4, cc_classes=4, modal_contrast_weight=0.01
+        recon, images, model._cluster_centers.weight, cc_modalities=4, cc_classes=3, modal_contrast_weight=0.01
     )
 
     expected_recon = torch.nn.functional.mse_loss(recon, images)
-    expected_modal_contrast = modal_contrastive_loss(model._cluster_centers.weight, cc_modalities=4, cc_classes=4)
+    expected_modal_contrast = modal_contrastive_loss(model._cluster_centers.weight, cc_modalities=4, cc_classes=3)
     assert torch.allclose(metrics["recon"], expected_recon)
     assert torch.allclose(metrics["modal_contrast"], expected_modal_contrast)
     assert torch.allclose(metrics["loss"], expected_recon + 0.01 * expected_modal_contrast)
@@ -204,7 +206,16 @@ def test_packaged_mcpl_configs_use_mcpl_training_contract(config_name: str) -> N
     assert config["model"] == "mcpl"
     assert config["loss"] == "mcpl"
     assert config["custom_trainer_kwargs"]["patch_size"] == 128
-    assert config["custom_trainer_kwargs"]["transform_kind"] == "imfuse"
+    assert config["norm_mode"] == "subject_zscore_nonzero"
+    assert config["batch_size"] == 1
+    assert config["lr"] == 0.0003
+    assert config["custom_model_kwargs"]["cc_classes"] == 3
+    assert config["custom_model_kwargs"]["logit_scale"] == 1.0
+    assert config["custom_trainer_kwargs"]["deep_supervised"] is False
+    assert config["custom_trainer_kwargs"]["views"] == 2
+    assert config["custom_trainer_kwargs"]["consistency_weight"] == 0.1
+    assert round(config["custom_trainer_kwargs"]["pretrain_fraction"] * config["num_epochs"]) == 600
+    assert config["num_epochs"] - 600 == 500
     assert config["scheduler"] == "cosine"
     assert config["optimizer"] == "adam"
     assert config["custom_trainer_kwargs"]["limage_lr"] == 0.005
@@ -225,6 +236,7 @@ def _new_mcpl_trainer_stub(
     trainer.limage_lr = 0.005
     trainer.num_epochs = num_epochs
     trainer._in_pretrain = None
+    trainer.pretrain_weight_decay = None
     trainer.optimizer_config = OptimizerConfig(optim_class=torch.optim.Adam, lr=1e-3, weight_decay=1e-5)
     trainer.scheduler_config = SchedulerConfig(scheduler_class=CosineAnnealingLR, kwargs={"T_max": num_epochs, "eta_min": 0.0})
     trainer.optimizer = trainer._build_optimizer()
@@ -285,3 +297,20 @@ def test_mcpl_build_optimizer_splits_limage_into_own_group_when_enabled() -> Non
     assert limage_group["params"] == [trainer.model.limage]
     other_group = next(g for g in trainer.optimizer.param_groups if g is not limage_group)
     assert not any(param is trainer.model.limage for param in other_group["params"])
+
+
+def test_mcpl_views_duplicate_each_sample_with_independent_masks_view_major() -> None:
+    trainer = _new_mcpl_trainer_stub(pretrain_epochs=0, learnable_filler=False)
+    trainer.views = 2
+    trainer.legacy_augment = False
+    trainer.mask_sampling = "count_uniform"
+    images = torch.randn(2, 4, input_patch_size, input_patch_size, input_patch_size)
+    seg = torch.randint(0, 4, (2, 1, input_patch_size, input_patch_size, input_patch_size)).float()
+    mask = torch.tensor([[True, False, True, True], [True, True, True, True]])
+
+    view_images, view_seg = trainer._build_views(images, seg, mask)
+
+    assert view_images.shape == (4, 4, input_patch_size, input_patch_size, input_patch_size)
+    assert torch.equal(view_seg[:2], seg) and torch.equal(view_seg[2:], seg)
+    assert torch.equal(view_images[0, 1], torch.zeros(input_patch_size, input_patch_size, input_patch_size))
+    assert torch.equal(view_images[1], images[1])
