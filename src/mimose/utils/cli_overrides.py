@@ -111,6 +111,45 @@ def load_yaml_config(config_path: Path | None) -> dict[str, Any]:
     return data
 
 
+FOLD_MODEL_KWARGS_KEY = "custom_model_kwargs_per_fold"
+
+
+def apply_fold_model_kwargs(yaml_config: dict[str, Any], fold: int | None) -> dict[str, Any]:
+    """Resolve a config's per-fold model kwargs into its plain ``custom_model_kwargs``.
+
+    Some families pick a different architecture per cross-validation fold -- the
+    nasflops sweep searches each fold's architecture on that fold's own
+    train/val split, so that no fold's test subjects influence the model it is
+    evaluated with. Keeping every fold's architecture in *one* config, keyed by
+    fold, keeps the ``<model>_<dsnum>`` results layout the summary scripts
+    discover, and keeps the sbatch scripts identical to every other family's.
+
+    Precedence is base ``custom_model_kwargs`` < the fold's entry < CLI
+    ``--custom-model-kwargs`` (applied later by ``merge_cli_overrides``). A
+    config with a per-fold mapping but no resolvable fold is an error rather
+    than a silent fallback: the base kwargs would build the wrong network.
+    """
+    per_fold = yaml_config.get(FOLD_MODEL_KWARGS_KEY)
+    if not per_fold:
+        return yaml_config
+    if fold is None:
+        raise typer.BadParameter(
+            f"config defines {FOLD_MODEL_KWARGS_KEY} (folds {sorted(map(str, per_fold))}); pass --fold",
+            param_hint="--fold",
+        )
+    entries = {str(key): value for key, value in per_fold.items()}
+    if str(fold) not in entries:
+        raise typer.BadParameter(
+            f"fold {fold} has no entry in {FOLD_MODEL_KWARGS_KEY}; available folds: {sorted(entries)}",
+            param_hint="--fold",
+        )
+    resolved = {key: value for key, value in yaml_config.items() if key != FOLD_MODEL_KWARGS_KEY}
+    model_kwargs = dict(yaml_config.get("custom_model_kwargs") or {})
+    model_kwargs.update(entries[str(fold)] or {})
+    resolved["custom_model_kwargs"] = model_kwargs
+    return resolved
+
+
 def _normalize_config_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _normalize_config_value(inner) for key, inner in value.items()}

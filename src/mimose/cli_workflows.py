@@ -25,6 +25,7 @@ from mimose.enums import (
     TrainerKind,
 )
 from mimose.utils.cli_overrides import (
+    apply_fold_model_kwargs,
     apply_run_suffix,
     load_yaml_config,
     merge_cli_overrides,
@@ -241,6 +242,7 @@ def build_train_merged_config(
     # A CLI --fold overrides the config's default `fold` (e.g. sbatch scripts override fold 1).
     if fold is None and yaml_config.get("fold") is not None:
         fold = int(yaml_config["fold"])
+    yaml_config = apply_fold_model_kwargs(yaml_config, fold)
     model_kwargs = (
         parse_kv_list(custom_model_kwargs)
         if custom_model_kwargs is not None

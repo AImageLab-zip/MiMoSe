@@ -39,6 +39,7 @@ def build_model_config(
 def _resolve_model(model_name: str) -> Any:
     target_name = _normalize_name(model_name)
     package_dir = Path(__file__).resolve().parent
+    import_failures: dict[str, Exception] = {}
 
     for module_path in sorted(package_dir.glob("*.py")):
         if module_path.stem in {"__init__", "config"}:
@@ -46,7 +47,15 @@ def _resolve_model(model_name: str) -> Any:
         if not module_path.stem.isidentifier():
             continue
 
-        module = importlib.import_module(f"mimose.models.{module_path.stem}")
+        try:
+            module = importlib.import_module(f"mimose.models.{module_path.stem}")
+        except ImportError as exc:
+            # An unrelated model's optional dependency (e.g. mamba_ssm, whose
+            # prebuilt kernels need a newer glibc than some clusters ship) must
+            # not make every other model unresolvable. Reported below only if
+            # the requested model is never found.
+            import_failures[module_path.stem] = exc
+            continue
         for attr_name in dir(module):
             if attr_name.startswith("_"):
                 continue
@@ -59,8 +68,11 @@ def _resolve_model(model_name: str) -> Any:
             if _matches_name(target_name, attr_name):
                 return attr
 
+    detail = "".join(
+        f"\n  mimose.models.{stem} failed to import: {exc}" for stem, exc in import_failures.items()
+    )
     raise typer.BadParameter(
-        f"Unsupported model: {model_name}",
+        f"Unsupported model: {model_name}{detail}",
         param_hint="--model",
     )
 

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 from mimose.models.abstract_model import AbstractModel
 from dynamic_network_architectures.architectures.unet import PlainConvUNet
@@ -47,6 +48,7 @@ class TinyMimosa(AbstractModel):
         n_conv_per_stage: int = 2,
         n_conv_per_stage_decoder: int = 2,
         overlap: float = 0.5,
+        gradient_checkpointing: bool = False,
     ) -> None:
         super().__init__()
         resolved_input_shape = tuple(int(dim) for dim in input_shape)
@@ -68,6 +70,7 @@ class TinyMimosa(AbstractModel):
         self.input_shape = resolved_input_shape
         self.features_per_stage = tuple(int(ch) for ch in features_per_stage)
         self.overlap = float(overlap)
+        self.gradient_checkpointing = bool(gradient_checkpointing)
         self.is_training = False
         self.spatial_multiple = 2 ** (len(self.features_per_stage) - 1)
         self.tile_shape = tuple(
@@ -126,16 +129,76 @@ class TinyMimosa(AbstractModel):
         gate = mask.to(images.dtype).view(images.size(0), images.size(1), 1, 1, 1)
         images = images * gate
 
-        skips = self.backbone.encoder(images)
+        if self._checkpointing_active():
+            skips = self._encoder_forward_checkpointed(images)
+        else:
+            skips = self.backbone.encoder(images)
         latent = skips[-1]
         scale, bias = self.mask_conditioning(mask)
         skips[-1] = latent * (1.0 + torch.tanh(scale)) + bias
 
-        fuse_logits = self.backbone.decoder(skips)
+        if self._checkpointing_active():
+            fuse_logits = self._decoder_forward_checkpointed(skips)
+        else:
+            fuse_logits = self.backbone.decoder(skips)
         fuse_pred = torch.softmax(fuse_logits, dim=1)
         if self.is_training:
             return fuse_pred, (), ()
         return fuse_pred
+
+    def _checkpointing_active(self) -> bool:
+        """Checkpoint only when it can actually pay for itself.
+
+        Recomputation is pure overhead unless a backward pass will follow, so
+        inference and ``torch.no_grad`` sliding-window ``predict`` take the
+        stock library path unchanged.
+        """
+        return self.gradient_checkpointing and self.training and torch.is_grad_enabled()
+
+    def _encoder_forward_checkpointed(self, x: torch.Tensor) -> list[torch.Tensor]:
+        """``PlainConvEncoder.forward`` with one checkpoint segment per stage.
+
+        Reimplemented rather than wrapping each stage in a ``nn.Module``:
+        a wrapper would insert itself into the parameter names
+        (``encoder.stages.0.convs...`` -> ``encoder.stages.0.module.convs...``)
+        and silently invalidate every existing checkpoint. Calling the same
+        submodules from here keeps ``state_dict`` byte-identical, which is what
+        lets ``gradient_checkpointing`` be toggled on a run mid-flight.
+
+        The encoder returns all skips (``return_skips=True`` is what
+        ``PlainConvUNet`` configures), so the ``return_skips`` branch of the
+        library forward is not reproduced -- it is unreachable here.
+        """
+        skips: list[torch.Tensor] = []
+        for stage in self.backbone.encoder.stages:
+            x = checkpoint(stage, x, use_reentrant=False)
+            skips.append(x)
+        return skips
+
+    def _decoder_forward_checkpointed(self, skips: list[torch.Tensor]) -> torch.Tensor:
+        """``UNetDecoder.forward`` with one checkpoint segment per stage.
+
+        Only the ``deep_supervision=False`` path is reproduced, which is the
+        only one ``TinyMimosa`` builds; the assert below is what stops a future
+        change to that constructor argument from silently losing the auxiliary
+        heads.
+
+        ``transpconvs`` are left outside the checkpoint on purpose: their output
+        is immediately concatenated with a skip that is already stored, so
+        recomputing them would buy nothing while forcing the (large, upsampled)
+        concat input to be saved anyway.
+        """
+        decoder = self.backbone.decoder
+        assert not decoder.deep_supervision, (
+            "checkpointed decoder reproduces the deep_supervision=False path only"
+        )
+
+        lres_input = skips[-1]
+        for stage in range(len(decoder.stages)):
+            x = decoder.transpconvs[stage](lres_input)
+            x = torch.cat((x, skips[-(stage + 2)]), 1)
+            lres_input = checkpoint(decoder.stages[stage], x, use_reentrant=False)
+        return decoder.seg_layers[-1](lres_input)
 
     def predict(self, images: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         self._validate_boundary_inputs(images, mask)

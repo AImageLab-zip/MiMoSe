@@ -26,6 +26,7 @@ from mimose.enums import (
 from mimose.paths import CONFIGS_DIR, SPLITS_DIR
 from mimose.update_check import maybe_notify_about_update
 from mimose.utils.cli_overrides import (
+    apply_fold_model_kwargs,
     apply_run_suffix,
     load_yaml_config,
     merge_cli_overrides,
@@ -1472,6 +1473,9 @@ def test(
     from mimose.training.config import parse_kv_list
 
     yaml_config = load_yaml_config(config)
+    yaml_config = apply_fold_model_kwargs(
+        yaml_config, fold if fold is not None else yaml_config.get("fold")
+    )
     merged = merge_cli_overrides(
         yaml_config,
         data_dir=data_dir,
@@ -1686,6 +1690,9 @@ def test_fast(
     from mimose.training.config import parse_kv_list
 
     yaml_config = load_yaml_config(config)
+    yaml_config = apply_fold_model_kwargs(
+        yaml_config, fold if fold is not None else yaml_config.get("fold")
+    )
     merged = merge_cli_overrides(
         yaml_config,
         data_dir=data_dir,
