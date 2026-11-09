@@ -128,6 +128,10 @@ class BaseTrainer(AbstractTrainer):
         clip = shared_kwargs.get("grad_clip_norm", DEFAULT_GRAD_CLIP_NORM)
         self.grad_clip_norm = None if clip is None else float(clip)
         self.skip_nonfinite_loss = bool(shared_kwargs.get("skip_nonfinite_loss", False))
+        # Autotunes conv algorithms for fixed input shapes (e.g. 128^3 patches); off by default
+        # because the chosen kernels are not bit-reproducible across runs.
+        if shared_kwargs.get("cudnn_benchmark", False):
+            torch.backends.cudnn.benchmark = True
         self.nonfinite_steps_skipped = 0
         self._consecutive_nonfinite_steps = 0
         self.amp_enabled = self.precision != Precision.FP32 and self.device.type == "cuda"

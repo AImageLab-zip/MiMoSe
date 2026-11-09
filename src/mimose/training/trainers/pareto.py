@@ -31,6 +31,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 from mimose.losses.tiny_mimosa import soft_target_loss
 from mimose.models.elastic_unet import ElasticUnet
+from mimose.training.masking import drop_one_available
 from mimose.training.trainers.imfuse import IMFuseTrainer
 
 __all__ = ["ParetoTrainer"]
@@ -79,6 +80,11 @@ class ParetoTrainer(IMFuseTrainer):
         classification because the tumor classes are severely imbalanced and a
         teacher that misses a small lesion would otherwise teach the student to
         miss it too.  Ignored when ``inplace_distill`` is false.
+    ``student_modality_drop``
+        Every subnetwork but the widest sees the batch mask with one more
+        available modality switched off (never all of them); the widest keeps
+        the original mask.  With ``inplace_distill`` this distils from more
+        modalities and more width into fewer of both.  Off by default.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -122,6 +128,14 @@ class ParetoTrainer(IMFuseTrainer):
             raise ValueError(
                 "inplace_distill needs budgets_per_step >= 2: with a single "
                 "subnetwork per step there is no teacher to distil from"
+            )
+        self.student_modality_drop = bool(
+            trainer_kwargs.get("student_modality_drop", False)
+        )
+        if self.student_modality_drop and self.budgets_per_step < 2:
+            raise ValueError(
+                "student_modality_drop needs budgets_per_step >= 2: the widest "
+                "subnetwork keeps the original mask, so there is no student"
             )
         self._configured_val_budgets = trainer_kwargs.get("val_budgets")
 
@@ -364,7 +378,7 @@ class ParetoTrainer(IMFuseTrainer):
         overshoot_count = 0.0
         params_sum = 0.0
 
-        if self.inplace_distill:
+        if self.inplace_distill or self.student_modality_drop:
             # Widest first: its output is the teacher for everything after it,
             # so it has to be computed before the others rather than wherever
             # the sampler happened to place it (sandwich returns [min, max, ...]).
@@ -378,9 +392,13 @@ class ParetoTrainer(IMFuseTrainer):
             # the teacher, so distilling it into itself would be a no-op at best.
             is_teacher = self.inplace_distill and index == 0
 
+            step_mask = mask
+            if self.student_modality_drop and index > 0:
+                step_mask = drop_one_available(mask)
+
             with self._autocast_context():
                 target = self._seg_to_one_hot(seg)
-                outputs = self.model(images, mask)
+                outputs = self.model(images, step_mask)
                 metrics = self._loss_impl().training_loss(
                     outputs, target, include_fuse=include_fuse
                 )
@@ -542,6 +560,9 @@ class ParetoTrainer(IMFuseTrainer):
                 "tau_start": self.tau_start,
                 "tau_end": self.tau_end,
                 "gate_lr_scale": self.gate_lr_scale,
+                "inplace_distill": self.inplace_distill,
+                "distill_alpha": self.distill_alpha,
+                "student_modality_drop": self.student_modality_drop,
                 "budget_min": self.budget_min,
                 "budget_max": self.budget_max,
                 "val_budgets": list(self.val_budgets),
