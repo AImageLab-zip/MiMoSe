@@ -15,7 +15,20 @@ def save_weights_only_checkpoint(
     # same parameter under multiple state_dict keys (shared modules). Plain
     # save_file() rejects that; save_model() detects and dedupes shared
     # tensors, and load_model() reconstructs the aliasing on load.
-    save_model(model, str(checkpoint_path))
+    # safetensors refuses non-contiguous tensors, which channels_last_3d weights
+    # are (see MIMOSE_CHANNELS_LAST in base_trainer): save a contiguous layout,
+    # then restore the training layout.
+    channels_last = any(
+        p.dim() == 5 and not p.is_contiguous() and p.is_contiguous(memory_format=torch.channels_last_3d)
+        for p in model.parameters()
+    )
+    if channels_last:
+        model.to(memory_format=torch.contiguous_format)
+    try:
+        save_model(model, str(checkpoint_path))
+    finally:
+        if channels_last:
+            model.to(memory_format=torch.channels_last_3d)
     return checkpoint_path
 
 

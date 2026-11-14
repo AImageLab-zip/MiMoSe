@@ -311,7 +311,15 @@ class BaseTrainer(AbstractTrainer):
             )
         model._mimose_model_kwargs = dict(model_kwargs)
         model._mimose_model_name = self.model_config.model_class.__name__
-        return model.to(self.device)
+        model = model.to(self.device)
+        if os.environ.get("MIMOSE_CHANNELS_LAST") == "1":
+            # Experimental, opt-in: with torch 2.9 + cuDNN 9.10, bf16/fp16 Conv3d in
+            # the default NCDHW layout bypasses cuDNN (vol2col fallback, ~3x slower
+            # than fp32). Weights in channels_last_3d make cuDNN pick its fast
+            # kernels; activations follow the weights' layout.
+            model = model.to(memory_format=torch.channels_last_3d)
+            LOGGER.info("MIMOSE_CHANNELS_LAST=1: model weights in channels_last_3d")
+        return model
 
     def _maybe_compile_model(self) -> None:
         if not self.compile or self.model is None:

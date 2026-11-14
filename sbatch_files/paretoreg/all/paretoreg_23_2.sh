@@ -15,6 +15,10 @@
 cd /homes/ocarpentiero/MiMoSe
 source /homes/ocarpentiero/MiMoSe/.venv/bin/activate
 export WANDB_CACHE_DIR=/work/phd_mimose/.wandb-cache
+# channels_last_3d weights: bf16 Conv3d otherwise bypasses cuDNN (vol2col fallback).
+# Same maths, ~1.75x faster training steps and ~40% less GPU memory (measured on
+# paretoscratch b1p4m, 2x RTX Pro 6000: ~1.0 s -> ~0.58 s per step).
+export MIMOSE_CHANNELS_LAST=1
 
 mimose train --config paretoreg_23.yaml --fold 2 --run-suffix fold2 --seed 0 --try-resume --distributed || exit 1
 
