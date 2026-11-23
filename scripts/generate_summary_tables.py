@@ -84,6 +84,10 @@ EXCLUDED_MODELS = {
         "manymimosas",
         "tinymimosa",
         "olduhved",
+        # Results on disk are from collapsed runs (MCPL v2/v3 nested-label bug;
+        # NAP-SCAF's train/test protocol mismatch). Drop mcpl once v4 is tested.
+        "mcpl",
+        "napscaf",
     )
 } | MIMOSA_SIZE_MODELS
 # Fallback display names for models not present in the legacy display-name
