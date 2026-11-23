@@ -7,6 +7,7 @@ import torch
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from mimose.enums import TransformKind
+from mimose.models.region_utils import regions_to_label_one_hot
 from mimose.losses.config import build_loss_config
 from mimose.losses.m3ae import M3AELoss, legacy_region_loss, m3ae_reconstruction_loss
 from mimose.models.config import build_model_config
@@ -62,8 +63,8 @@ def test_m3ae_substitutes_missing_modalities_with_learned_embedding() -> None:
     one_missing = torch.tensor([[True, True, True, False]])
 
     with torch.no_grad():
-        out_full = model(images, all_present)
-        out_missing = model(images, one_missing)
+        out_full = model(images, all_present, mode="segment_logits")
+        out_missing = model(images, one_missing, mode="segment_logits")
 
     assert torch.isfinite(out_missing).all()
     assert not torch.allclose(out_full, out_missing)
@@ -145,14 +146,14 @@ def test_m3ae_window_starts_use_50_percent_overlap() -> None:
 def test_m3ae_predict_slides_over_larger_volumes() -> None:
     torch.manual_seed(0)
     model = M3AE(num_cls=4).eval()
-    images = torch.randn(1, 4, 160, 160, 160)
+    images = torch.randn(1, 4, 160, 160, 144)
     mask = torch.ones(1, 4, dtype=torch.bool)
 
     with torch.no_grad():
         pred = model.predict(images, mask)
 
-    assert pred.shape == (1, 4, 160, 160, 160)
-    assert torch.isfinite(pred).all()
+    assert pred.shape == (1, 4, 160, 160, 144)
+    assert torch.equal(pred.sum(dim=1), torch.ones(1, 160, 160, 144))
 
 
 def test_m3ae_resolves_from_model_config_builder() -> None:
@@ -183,7 +184,8 @@ def test_m3ae_training_loss_end_to_end() -> None:
     mask = torch.ones(1, 4, dtype=torch.bool)
     target = _random_target(batch=1, num_classes=4, size=input_patch_size)
 
-    output = model(images, mask)
+    output = model(images, mask, mode="segment_logits")
+    assert output.shape == (1, 3, input_patch_size, input_patch_size, input_patch_size)
     loss_fn = M3AELoss(num_classes=4)
     metrics = loss_fn.training_loss(output, target)
 
@@ -199,7 +201,14 @@ def test_packaged_m3ae_configs_use_m3ae_training_contract(config_name: str) -> N
     assert config["model"] == "m3ae"
     assert config["loss"] == "m3ae"
     assert config["custom_trainer_kwargs"]["patch_size"] == 128
-    assert config["custom_trainer_kwargs"]["transform_kind"] == "imfuse"
+    assert config["norm_mode"] == "irm_min_max"
+    assert config["batch_size"] == 1
+    assert config["lr"] == 0.0003
+    assert config["custom_trainer_kwargs"]["views"] == 2
+    assert config["custom_trainer_kwargs"]["pretrain_samples_per_step"] == 2
+    assert config["custom_trainer_kwargs"]["consistency_weight"] == 0.1
+    assert config["custom_trainer_kwargs"]["final_from_best"] is True
+    assert config["custom_model_kwargs"]["num_regions"] == 3
     assert config["scheduler"] == "cosine"
     assert config["optimizer"] == "adam"
     assert round(config["custom_trainer_kwargs"]["pretrain_fraction"] * config["num_epochs"]) == 600
@@ -208,12 +217,32 @@ def test_packaged_m3ae_configs_use_m3ae_training_contract(config_name: str) -> N
     assert config["custom_trainer_kwargs"]["pretrain_weight_decay"] == 0.0
     assert config["custom_trainer_kwargs"]["limage_lr"] == 0.005
     assert config["custom_trainer_kwargs"]["limage_reg_weight"] == 0.005
-    assert config["custom_loss_kwargs"]["formulation"] == "legacy_region"
 
 
-def test_m3ae_loss_rejects_unknown_formulation() -> None:
-    with pytest.raises(ValueError):
-        M3AELoss(num_classes=4, formulation="sigmoid")
+def _legacy_edice(inputs: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    # Verbatim legacy/m3ae/loss/dice.py EDiceLoss.forward.
+    dice = 0
+    ce = 0
+    for i in range(target.size(1)):
+        probs = torch.sigmoid(inputs[:, i, ...])
+        t = target[:, i, ...]
+        dice = dice + 1 - (2 * torch.sum(probs * t) + 1.0) / (probs.pow(2).sum() + t.pow(2).sum() + 1.0)
+        ce = ce + torch.nn.BCELoss()(torch.sigmoid(inputs[:, i, ...]), t)
+    return (0.7 * dice + 0.3 * ce) / target.size(1)
+
+
+def test_m3ae_training_loss_is_legacy_edice_on_et_tc_wt() -> None:
+    torch.manual_seed(2)
+    logits = torch.randn(2, 3, 8, 8, 8) * 3
+    target = _random_target(batch=2, num_classes=4, size=8)
+    labels = target.argmax(dim=1)
+    regions = torch.stack([labels == 3, (labels == 1) | (labels == 3), labels > 0], dim=1).float()
+
+    metrics = M3AELoss(num_classes=4).training_loss(logits, target)
+
+    assert torch.allclose(metrics["loss"], _legacy_edice(logits, regions), atol=1e-6)
+    ds = M3AELoss(num_classes=4).deep_supervised_training_loss([logits, logits * 0.5], target)
+    assert torch.allclose(ds["loss"], _legacy_edice(logits, regions) + _legacy_edice(logits * 0.5, regions), atol=1e-6)
 
 
 def test_m3ae_legacy_region_loss_matches_edice_on_regions() -> None:
@@ -221,7 +250,7 @@ def test_m3ae_legacy_region_loss_matches_edice_on_regions() -> None:
     output = torch.softmax(torch.randn(2, 4, 8, 8, 8), dim=1)
     target = _random_target(batch=2, num_classes=4, size=8)
 
-    metrics = M3AELoss(num_classes=4, formulation="legacy_region").training_loss(output, target)
+    metrics = legacy_region_loss(output, target)
 
     def region(t: torch.Tensor, classes: tuple[int, ...]) -> torch.Tensor:
         return sum(t[:, c] for c in classes)
@@ -351,3 +380,40 @@ def test_m3ae_build_optimizer_splits_limage_into_own_group_when_enabled() -> Non
     assert limage_group["params"] == [trainer.model.limage]
     other_group = next(g for g in trainer.optimizer.param_groups if g is not limage_group)
     assert not any(param is trainer.model.limage for param in other_group["params"])
+
+
+def test_m3ae_entering_finetune_starts_a_fresh_adam_without_limage() -> None:
+    trainer = _new_m3ae_trainer_stub(pretrain_epochs=3, num_epochs=10)
+    trainer._apply_training_stage(0)
+    trainer.scheduler = trainer._build_scheduler(trainer.optimizer)
+    trainer.model.seg_layer.weight.grad = torch.ones_like(trainer.model.seg_layer.weight)
+    trainer.optimizer.step()
+    assert trainer.optimizer.state
+
+    trainer._apply_training_stage(3)
+
+    assert not trainer.optimizer.state
+    assert trainer.optimizer.param_groups[0]["lr"] == 1e-3
+    assert trainer.optimizer.param_groups[1]["lr"] == 0.0
+
+
+def test_m3ae_template_is_sliced_at_the_crop_location() -> None:
+    model = M3AE(num_cls=4, template_shape=(160, 160, 144)).train()
+    images = torch.zeros(2, 4, input_patch_size, input_patch_size, input_patch_size)
+    mask = torch.tensor([[True, False, True, True], [True, True, True, True]])
+    location = torch.tensor([[5, 7, 9], [0, 0, 0]])
+
+    filled = model.fill_missing(images, mask, location)
+
+    expected = model.limage[0, 1, 5 : 5 + input_patch_size, 7 : 7 + input_patch_size, 9 : 9 + input_patch_size]
+    assert torch.equal(filled[0, 1], expected)
+    assert torch.equal(filled[1], images[1])
+
+
+def test_regions_are_nested_into_brats_labels() -> None:
+    # [ET, TC, WT] logits for 5 voxels: none, WT only, TC+WT, all, ET only.
+    logits = torch.tensor([[-1.0, -1, -1, 1, 1], [-1, -1, 1, 1, -1], [-1, 1, 1, 1, -1]]).view(1, 3, 5, 1, 1)
+
+    labels = regions_to_label_one_hot(logits).argmax(dim=1).flatten().tolist()
+
+    assert labels == [0, 2, 1, 3, 3]

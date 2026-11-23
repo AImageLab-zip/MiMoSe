@@ -137,6 +137,7 @@ def _make_epoch_ready_trainer(steps: int = 2, slices_per_patch: int = 4):
     trainer.grad_clip_norm = None
     trainer.slices_per_patch = slices_per_patch
     trainer.slice_sampling = "tumor"
+    trainer.legacy_slices = False
     trainer.loss_fn = NAPSCAFLoss(num_classes=4)
     trainer.optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
     trainer._autocast_context = lambda: nullcontext()  # type: ignore[method-assign]
@@ -200,11 +201,175 @@ def test_packaged_napscaf_configs_use_napscaf_training_contract(config_name: str
     assert config["trainer"] == "napscaf"
     assert config["model"] == "napscaf"
     assert config["loss"] == "napscaf"
-    assert config["custom_trainer_kwargs"]["patch_size"] == 128
-    assert config["custom_trainer_kwargs"]["slices_per_patch"] == 16
+    trainer_kwargs = config["custom_trainer_kwargs"]
+    assert trainer_kwargs["legacy_slices"] is True
+    assert trainer_kwargs["slices_per_case"] == 5
+    assert trainer_kwargs["slice_seed"] == 7
+    assert trainer_kwargs["min_nonzero_ratio"] == pytest.approx(0.05)
+    assert trainer_kwargs["slice_size"] == 256
+    assert trainer_kwargs["train_masking_mode"] == "full"
+    assert trainer_kwargs["final_from_best"] is True
+    assert trainer_kwargs["fp32_validation"] is True
+    assert config["validation_every"] == 1
+    assert config["custom_model_kwargs"]["inference_size"] == 256
+    assert config["crop_mode"] == "none"
+    assert config["clamp_mode"] == "none"
+    assert config["norm_mode"] == "slice_percentile_uint8"
+    assert config["batch_size"] == 16
+    assert config["num_epochs"] == 150
+    assert config["precision"] == "fp16"
     assert config["optimizer"] == "adamw"
     assert tuple(config["betas"]) == (0.9, 0.99)
     assert config["scheduler"] == "step"
     assert config["step_gamma"] == 1.0
     assert config["lr"] == pytest.approx(1e-4)
     assert config["weight_decay"] == pytest.approx(1e-4)
+
+
+def test_slice_percentile_uint8_matches_legacy_png_normalisation() -> None:
+    import numpy as np
+
+    from mimose.preprocessing.normalization import slice_percentile_uint8
+
+    rng = np.random.default_rng(0)
+    images = np.zeros((4, 24, 20, 3))
+    images[:, 4:18, 3:15, :] = rng.gamma(2.0, 100.0, size=(4, 14, 12, 3))
+    out = slice_percentile_uint8(images, None)
+
+    def legacy(array):  # legacy/NAP-SCAF/scripts/preprocess_brats_png.py::normalize_to_uint8, then /255
+        p1, p99 = np.percentile(array, (1, 99))
+        array = np.clip(array, p1, p99)
+        if p99 <= p1:
+            return np.zeros_like(array, dtype=np.uint8)
+        return ((array - p1) / (p99 - p1) * 255.0).astype(np.uint8)
+
+    for c in range(4):
+        for z in range(3):
+            np.testing.assert_array_equal(out[c, ..., z], legacy(images[c, ..., z]) / np.float32(255.0))
+    assert slice_percentile_uint8(np.zeros((4, 8, 8, 2)), None).max() == 0
+
+
+def _write_case(root: Path, name: str, tumor_slices: list[int], depth: int = 10, empty_modality_slice: int | None = None):
+    import numpy as np
+
+    rng = np.random.default_rng(abs(hash(name)) % 2**32)
+    images = np.zeros((4, 16, 16, depth), dtype=np.float32)
+    images[:, 2:14, 2:14, :] = rng.integers(1, 256, size=(4, 12, 12, depth)) / 255.0
+    if empty_modality_slice is not None:
+        images[1, ..., empty_modality_slice] = 0.0
+    seg = np.zeros((1, 16, 16, depth), dtype=np.uint8)
+    for z in tumor_slices:
+        seg[0, 6:9, 6:9, z] = 3
+    np.savez_compressed(root / f"{name}.npz", images=images, seg=seg)
+    return images, seg
+
+
+def test_napscaf_slice_dataset_reproduces_legacy_slice_selection(tmp_path: Path) -> None:
+    import random
+
+    import numpy as np
+
+    from mimose.datasets.napscaf_slices import NAPSCAFSliceDataset
+
+    _write_case(tmp_path, "case_a", tumor_slices=[1, 2, 3, 4, 5, 6, 7, 8])
+    _write_case(tmp_path, "case_b", tumor_slices=[2, 4, 6], empty_modality_slice=4)
+    case_c_images, case_c_seg = _write_case(tmp_path, "case_c", tumor_slices=[0, 1, 2, 3, 4, 5, 9])
+
+    # Legacy: one random.seed(7) for the whole run, sorted cases, sample only when > 5 candidates.
+    rng = random.Random(7)
+    expected = {
+        "case_a": sorted(rng.sample([1, 2, 3, 4, 5, 6, 7, 8], 5)),
+        "case_b": [2, 6],
+        "case_c": sorted(rng.sample([0, 1, 2, 3, 4, 5, 9], 5)),
+    }
+
+    split = [{"sub": name} for name in ("case_a", "case_b", "case_c")]
+    dataset = NAPSCAFSliceDataset(tmp_path, split, slices_per_case=5, seed=7, image_size=16)
+    index = __import__("json").loads((dataset.cache_dir / "index.json").read_text())
+    got: dict[str, list[int]] = {}
+    for case, z in zip(index["cases"], index["z"]):
+        got.setdefault(case, []).append(z)
+    assert got == expected
+
+    item = dataset[len(dataset) - 1]  # last slice of case_c
+    z = expected["case_c"][-1]
+    assert item["sub"] == "case_c"
+    np.testing.assert_allclose(item["images"].numpy(), case_c_images[..., z], atol=1e-6)
+    np.testing.assert_array_equal(item["seg"].numpy(), case_c_seg[0, ..., z])
+    assert item["mask"].all()
+
+    only_b = NAPSCAFSliceDataset(tmp_path, [{"sub": "case_b"}], slices_per_case=5, seed=7, image_size=32)
+    assert len(only_b) == 2
+    assert tuple(only_b[0]["images"].shape) == (4, 32, 32)
+    assert tuple(only_b[0]["seg"].shape) == (32, 32)
+
+
+def test_napscaf_inference_size_resizes_slices_and_returns_native_grid() -> None:
+    model = NAPSCAF(num_cls=4, pretrained_prior=False, inference_size=64).eval()
+    images = torch.rand(1, 4, 40, 40, 2)
+    mask = torch.ones(1, 4, dtype=torch.bool)
+    with torch.no_grad():
+        torch.manual_seed(0)
+        out = model.predict(images, mask)
+        slices = images.permute(0, 4, 1, 2, 3).reshape(2, 4, 40, 40)
+        torch.manual_seed(0)
+        logits = model.forward_slices(torch.nn.functional.interpolate(slices, size=(64, 64), mode="bilinear"), mask.expand(2, -1))
+        expected = torch.nn.functional.interpolate(logits, size=(40, 40), mode="bilinear").softmax(dim=1)
+    assert tuple(out.shape) == (1, 4, 40, 40, 2)
+    torch.testing.assert_close(out, expected.reshape(1, 2, 4, 40, 40).permute(0, 2, 3, 4, 1))
+    with pytest.raises(ValueError, match="multiple of 32"):
+        NAPSCAF(num_cls=4, pretrained_prior=False, inference_size=250)
+
+
+def test_napscaf_trainer_exports_best_checkpoint(tmp_path: Path) -> None:
+    from mimose.training.trainers import NAPSCAFTrainer
+    from mimose.training.trainers.mstkdnet import MSTKDTrainer
+
+    trainer = NAPSCAFTrainer.__new__(NAPSCAFTrainer)
+    trainer.model = torch.nn.Linear(2, 2)
+    trainer.device = torch.device("cpu")
+    trainer.checkpoint_dir = tmp_path
+    trainer._model_for_state = lambda: trainer.model  # type: ignore[method-assign]
+    best = {k: torch.full_like(v, 7.0) for k, v in trainer.model.state_dict().items()}
+    torch.save({"state_dict": best}, tmp_path / "best.pth")
+    seen = {}
+    original = MSTKDTrainer.save_final_checkpoint
+    def fake_save(self):
+        seen["w"] = self.model.weight.clone()
+        return tmp_path
+
+    MSTKDTrainer.save_final_checkpoint = fake_save  # type: ignore[method-assign]
+    try:
+        trainer.final_from_best = False
+        trainer.save_final_checkpoint()
+        assert not torch.all(seen.pop("w") == 7.0)
+        trainer.final_from_best = True
+        trainer.save_final_checkpoint()
+        assert torch.all(seen.pop("w") == 7.0)
+    finally:
+        MSTKDTrainer.save_final_checkpoint = original  # type: ignore[method-assign]
+
+
+def test_napscaf_fp32_validation_disables_autocast_only_during_validation() -> None:
+    from mimose.training.trainers import NAPSCAFTrainer
+    from mimose.training.trainers.mstkdnet import MSTKDTrainer
+
+    trainer = NAPSCAFTrainer.__new__(NAPSCAFTrainer)
+    trainer.amp_enabled = True
+    seen = []
+    original = MSTKDTrainer.val_epoch
+
+    def fake_val(self, epoch):
+        seen.append(self.amp_enabled)
+        return {}
+
+    MSTKDTrainer.val_epoch = fake_val  # type: ignore[method-assign]
+    try:
+        trainer.fp32_validation = False
+        trainer.val_epoch(0)
+        trainer.fp32_validation = True
+        trainer.val_epoch(0)
+    finally:
+        MSTKDTrainer.val_epoch = original  # type: ignore[method-assign]
+    assert seen == [True, False]
+    assert trainer.amp_enabled is True

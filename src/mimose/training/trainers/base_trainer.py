@@ -128,6 +128,10 @@ class BaseTrainer(AbstractTrainer):
         clip = shared_kwargs.get("grad_clip_norm", DEFAULT_GRAD_CLIP_NORM)
         self.grad_clip_norm = None if clip is None else float(clip)
         self.skip_nonfinite_loss = bool(shared_kwargs.get("skip_nonfinite_loss", False))
+        # Autotunes conv algorithms for fixed input shapes (e.g. 128^3 patches); off by default
+        # because the chosen kernels are not bit-reproducible across runs.
+        if shared_kwargs.get("cudnn_benchmark", False):
+            torch.backends.cudnn.benchmark = True
         self.nonfinite_steps_skipped = 0
         self._consecutive_nonfinite_steps = 0
         self.amp_enabled = self.precision != Precision.FP32 and self.device.type == "cuda"
@@ -307,7 +311,15 @@ class BaseTrainer(AbstractTrainer):
             )
         model._mimose_model_kwargs = dict(model_kwargs)
         model._mimose_model_name = self.model_config.model_class.__name__
-        return model.to(self.device)
+        model = model.to(self.device)
+        if os.environ.get("MIMOSE_CHANNELS_LAST") == "1":
+            # Experimental, opt-in: with torch 2.9 + cuDNN 9.10, bf16/fp16 Conv3d in
+            # the default NCDHW layout bypasses cuDNN (vol2col fallback, ~3x slower
+            # than fp32). Weights in channels_last_3d make cuDNN pick its fast
+            # kernels; activations follow the weights' layout.
+            model = model.to(memory_format=torch.channels_last_3d)
+            LOGGER.info("MIMOSE_CHANNELS_LAST=1: model weights in channels_last_3d")
+        return model
 
     def _maybe_compile_model(self) -> None:
         if not self.compile or self.model is None:
@@ -315,7 +327,12 @@ class BaseTrainer(AbstractTrainer):
         if self.device.type != "cuda":
             LOGGER.warning("--compile requested but device is %s; skipping compilation", self.device)
             return
-        self.model = torch.compile(self.model, mode="reduce-overhead")
+        # MIMOSE_COMPILE_MODE overrides the mode. On RTX Pro 6000 (bf16 +
+        # channels_last_3d, fixed-width 3D U-Net) "max-autotune-no-cudagraphs"
+        # measured 235 ms/step vs 283 ms for "default" and 383 ms uncompiled.
+        mode = os.environ.get("MIMOSE_COMPILE_MODE", "reduce-overhead")
+        LOGGER.info("torch.compile mode=%s", mode)
+        self.model = torch.compile(self.model, mode=mode)
 
     def _build_optimizer(
         self,

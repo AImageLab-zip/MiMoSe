@@ -50,6 +50,7 @@ class TrainerKind(StrEnum):
     PARETO = "pareto"
     ADAMM = "adamm"
     NAPSCAF = "napscaf"
+    ALORAMOE = "aloramoe"
 
 
 class ModelKind(StrEnum):
@@ -60,6 +61,7 @@ class ModelKind(StrEnum):
     A2FSEG = "a2fseg"
     TINYMIMOSA = "tinymimosa"
     SIMPLEUNET = "simpleunet"
+    NONET = "nonet"
     ELASTICUNET = "elasticunet"
     MANYMIMOSAS = "manymimosas"
     MANYMIMOSASKD = "manymimosaskd"
@@ -83,12 +85,14 @@ class ModelKind(StrEnum):
     MCPL = "mcpl"
     ADAMM = "adamm"
     NAPSCAF = "napscaf"
+    ALORAMOE = "aloramoe"
 
 
 class TransformKind(StrEnum):
     IMFUSE = "imfuse"
     TINYMIMOSA = "tinymimosa"
     SHASPEC = "shaspec"
+    ALORAMOE = "aloramoe"
 
 
 class OptimizerKind(StrEnum):
@@ -127,6 +131,7 @@ class LossKind(StrEnum):
     MCPL = "mcpl"
     ADAMM = "adamm"
     NAPSCAF = "napscaf"
+    ALORAMOE = "aloramoe"
 
 
 class MaskingMode(StrEnum):

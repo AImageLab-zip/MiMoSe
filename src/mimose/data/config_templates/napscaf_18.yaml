@@ -1,31 +1,37 @@
 # Combined NAP-SCAF reference config for BraTS 2018.
-# This mirrors legacy NAP-SCAF defaults (legacy/NAP-SCAF/scripts/train_brats.py
-# and README) as closely as possible under the current MiMoSe CLI/config API.
-#
-# Note: legacy NAP-SCAF is a 2D network trained on axial slices. This port
-# keeps the 2D network unchanged and trains it on axial slices drawn from the
-# usual 3D patches (slices_per_patch per patch, tumor slices first, like
-# legacy's tumor-slice preprocessing); validation/testing run it slice by
-# slice over the whole volume. Like every other model here it uses the shared
-# z-score preprocessing and random missing-modality masks during training
-# (legacy trains on full modalities only and zero-fills missing ones at test
-# time). See docs/training.md for the full rationale.
+# This reproduces the legacy NAP-SCAF recipe (legacy/NAP-SCAF/scripts/
+# preprocess_brats_png.py + train_brats.py + evaluate_brats.py):
+#   - preprocessing: full 240x240 axial slices (no crop), each normalised on its
+#     own: clip to its 1st/99th percentile (background included), scale to
+#     uint8, /255 (norm_mode slice_percentile_uint8);
+#   - training data: a fixed set of at most 5 tumor slices per case (every
+#     modality >= 5% nonzero), drawn once with seed 7, resized to 256x256;
+#     batches of 16 shuffled slices; no augmentation;
+#   - all four modalities present during training (train_masking_mode: full);
+#     missing modalities are only zero-filled at evaluation, as in legacy;
+#   - AdamW(lr 1e-4, wd 1e-4, betas (0.9, 0.99)), constant lr, 150 epochs, AMP for
+#     training only (validation and test in fp32); validation every epoch and the
+#     best validation checkpoint is the one tested.
+# Inference resizes every 240x240 slice to 256x256 and the logits back.
+# Deviations kept: the 80/20 random slice split is replaced by the shared fold
+# split, validation is volumetric (random modality subsets) instead of on full-
+# modality 2D slices, and the train loader drops its last incomplete batch.
 
 # preprocess
 input_dir: /path/to/unpacked
-output_dir: /path/to/preprocessed/napscaf-preprocessed/
+output_dir: /path/to/preprocessed/napscaf-legacy-preprocessed/
 dataset_type: brats18
 
-crop_mode: non_empty
+crop_mode: none
 crop_size: null
-crop_min_size: [128, 128, 128]
+crop_min_size: null
 
 clamp_mode: none
 clamp_percentile: null
 clamp_min: null
 clamp_max: null
 
-norm_mode: subject_zscore
+norm_mode: slice_percentile_uint8
 norm_min_max_range: null
 norm_mean: null
 norm_std: null
@@ -33,7 +39,7 @@ norm_std: null
 yes: false
 
 # training
-data_dir: /path/to/preprocessed/napscaf-preprocessed
+data_dir: /path/to/preprocessed/napscaf-legacy-preprocessed
 art_dir: /path/to/artifacts/napscaf18
 results_dir: /path/to/results/napscaf_18
 
@@ -49,6 +55,8 @@ custom_model_kwargs:
   # ImageNet DenseNet121 weights for the (never-trained, as in legacy) prior encoder.
   pretrained_prior: true
   slice_chunk: 32
+  # Legacy evaluates 256x256 slices (240x240 resized).
+  inference_size: 256
 
 custom_loss_kwargs:
   num_classes: null
@@ -58,12 +66,17 @@ custom_loss_kwargs:
 custom_trainer_kwargs:
   iter_per_epoch: null
   patch_size: 128
-  # One 128^3 patch per step -> 16 axial 128x128 slices, matching legacy's batch of 16 slices.
-  slices_per_patch: 16
-  slice_sampling: tumor
+  # Legacy fixed slice set: <= 5 tumor slices per case (seed 7), full slices resized to 256.
+  legacy_slices: true
+  slices_per_case: 5
+  slice_seed: 7
+  min_nonzero_ratio: 0.05
+  slice_size: 256
+  final_from_best: true
+  fp32_validation: true
   debug: false
   transform_kind: imfuse
-  train_masking_mode: random
+  train_masking_mode: full
   val_masking_mode: validation
   grad_clip_norm: null
   skip_nonfinite_loss: true
@@ -89,11 +102,9 @@ plateau_factor: null
 plateau_patience: null
 
 lr: 0.0001
-# Legacy trains 150 epochs over ~5 fixed tumor slices per case (~750 slices per case);
-# 50 epochs x 16 slices per patch gives a comparable ~800.
-num_epochs: 50
-validation_every: 5
-batch_size: 1
+num_epochs: 150
+validation_every: 1
+batch_size: 16
 weight_decay: 0.0001
 num_workers: 8
 # Legacy's README trains with --amp.

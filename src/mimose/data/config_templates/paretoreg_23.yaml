@@ -1,0 +1,125 @@
+# paretoreg_23 = pareto_23 plus a distillation regulariser (fold 1 experiment).
+# Identical to pareto_23.yaml except: budget_sampling sandwich, inplace_distill
+# with distill_alpha 0.5, student_modality_drop, cudnn_benchmark, 6 workers per
+# rank (to fit 50 GB of host RAM), and its own run/result/wandb names.
+#
+# pareto_23 = budget-conditioned ElasticUnet supernet (Phase 4).
+#
+# One set of shared weights serves a whole range of parameter budgets. Each
+# optimizer step samples `budgets_per_step` budgets, evaluates the matching
+# subnetworks on the same batch, and steps once on the accumulated gradient.
+#
+# Budget range is implied by custom_model_kwargs.features_per_stage: the
+# supernet spans uniform 1/8 width up to full width, i.e. ~1.43M .. ~91.4M
+# parameters for (64,128,256,512,1024). Preprocessing matches the mimosa_[size]
+# sweep exactly, so results are directly comparable to those baselines.
+
+# preprocess
+input_dir: /work/phd_mimose/unpacked
+output_dir: /work/phd_mimose/mimosa_preprocessed
+dataset_type: brats23
+
+crop_mode: non_empty
+crop_size: null
+crop_min_size: [128, 128, 128]
+
+clamp_mode: none
+clamp_percentile: null
+clamp_min: null
+clamp_max: null
+
+norm_mode: subject_zscore
+norm_min_max_range: null
+norm_mean: null
+norm_std: null
+
+yes: false
+
+# training
+data_dir: /work/phd_mimose/mimosa_preprocessed
+art_dir: /work/phd_mimose/runs/paretoreg23
+results_dir: /work/phd_mimose/results/paretoreg_23
+
+trainer: pareto
+model: elasticunet
+loss: tinymimosa
+
+custom_model_kwargs:
+  num_cls: 4
+  input_shape: [128, 128, 128]
+  features_per_stage: [64, 128, 256, 512, 1024]  # the widest architecture
+  group_size: 4        # channel granularity of the gates
+  tau: 0.05            # overwritten each epoch by the trainer's anneal
+
+custom_loss_kwargs:
+  dice_weight: 0.5
+  ce_weight: 0.5
+  eps: 0.001
+
+custom_trainer_kwargs:
+  transform_kind: imfuse
+  patch_size: 128
+  train_masking_mode: random
+  val_masking_mode: validation
+  # --- multi-budget training ---
+  budgets_per_step: 3        # subnets per step; cost scales linearly
+  budget_sampling: sandwich  # widest is always sampled, so it can be the teacher
+  local_window_ratio: 1.5    # 30M centre -> 20M / 30M / 45M
+  lambda_param: 1.0          # weight of the budget-overshoot penalty
+  tau_start: 0.5             # gate temperature, annealed geometrically ...
+  tau_end: 0.02              # ... to here over num_epochs
+  gate_lr_scale: 1.0         # LR multiplier for the gate thresholds
+  # --- regulariser (vs pareto_23: sandwich sampling + these three) ---
+  inplace_distill: true        # widest subnetwork's detached output is a soft target
+  distill_alpha: 0.5           # students: 0.5 * label loss + 0.5 * teacher loss
+  student_modality_drop: true  # students see one fewer available modality than the teacher
+  cudnn_benchmark: true        # speed only: autotuned conv kernels for the fixed 128^3 patches
+
+optimizer: adamw
+betas: [0.9, 0.999]
+momentum: 0.9
+
+scheduler: poly
+poly_total_iters: 1000
+poly_power: 0.9
+cosine_t_max: null
+cosine_eta_min: null
+step_step_size: null
+step_gamma: null
+multistep_milestones: null
+multistep_gamma: null
+plateau_mode: null
+plateau_factor: null
+plateau_patience: null
+
+# batch_size/lr deliberately match mimosa_gargantuan: this supernet's widest
+# subnetwork is *exactly* gargantuan (64,128,256,512,1024 -> 91,366,608 params),
+# so keeping the recipe identical means any Dice difference at the top of the
+# budget range is attributable to the architecture search, not to the training
+# setup. Memory is fine at 3: the budgets_per_step forward/backward passes are
+# sequential and each graph is freed before the next, so peak usage is a single
+# full-width forward -- the same as gargantuan, which OOMs only at 6.
+lr: 0.0003
+num_epochs: 1000
+validation_every: 10
+batch_size: 3
+weight_decay: 0.0001
+num_workers: 6
+precision: bf16
+compile: false
+
+resume: false
+pretrain: null
+seed: 999
+
+fold: 1
+wandb_project: ParetoMM
+wandb_entity: homarone-unimore
+wandb_mode: online
+wandb_run_name: paretoreg23
+push_to_hf: true
+hf_repo: AImageLab-Zip/MiMoSe
+
+# testing
+checkpoint_path: /work/phd_mimose/runs/paretoreg23/checkpoints/final_weights_only.safetensors
+output_path: /work/phd_mimose/results/paretoreg_23/results.txt

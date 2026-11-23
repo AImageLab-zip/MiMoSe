@@ -264,6 +264,20 @@ def choose_corner_and_fraction(ax, outside_points):
     return fallback_loc, fallback_frac
 
 
+# Hooks for callers: FONT_SCALE multiplies every font size of render_pareto_plot;
+# EXTRA_BOLD names points whose label is drawn bold (frontier style) even when
+# they are off the frontier, e.g. a model statistically tied with a frontier one.
+FONT_SCALE = 1.0
+EXTRA_BOLD: set = set()
+# OFFSCALE_LOW names points far below the rest (e.g. U-HVED) that would squash
+# the y axis: they are drawn as a down-pointing marker on the bottom edge, with
+# their true y value in the label. The Pareto frontier uses the true values.
+OFFSCALE_LOW: set = set()
+_LABEL_TEXT: dict = {}
+DISPLAY_NAMES: dict = {}  # point key -> label text shown on the plot
+LEGEND_LOC = None  # overrides the automatic legend placement
+
+
 def marker_size_for(name, frontier):
     return 95 if name in frontier else 60
 
@@ -279,7 +293,7 @@ def scatter_markers(ax, points, families, frontier, names):
         ax.scatter(
             lat,
             dice,
-            marker=style["marker"],
+            marker="v" if name in _LABEL_TEXT else style["marker"],
             color=style["color"],
             s=marker_size_for(name, frontier),
             zorder=3,
@@ -297,6 +311,7 @@ def add_labels(ax, points, families, frontier, names, *, fontsize, leader_color=
     for label_idx, name in enumerate(names):
         lat, dice = points[name]
         on_frontier = name in frontier
+        bold = on_frontier or name in EXTRA_BOLD
         marker_size = marker_size_for(name, frontier)
         # `s` is marker area in points^2 -- convert to an actual radius (in
         # points) so both the initial offset and the repel obstacle box
@@ -317,10 +332,10 @@ def add_labels(ax, points, families, frontier, names, *, fontsize, leader_color=
         text = ax.text(
             start_x,
             start_y,
-            name,
+            _LABEL_TEXT.get(name, DISPLAY_NAMES.get(name, name)),
             fontsize=fontsize,
-            fontweight="bold" if on_frontier else "normal",
-            color=FRONTIER_COLOR if on_frontier else "#333333",
+            fontweight="bold" if bold else "normal",
+            color=FRONTIER_COLOR if bold else "#333333",
             zorder=4,
         )
         label_entries.append((text, (lat, dice), marker_half_pt))
@@ -361,19 +376,34 @@ def collect_points(x_key="lat_gpu", *, x_scale=1.0, expected_folds=None, groups=
     return points, families
 
 
-def render_pareto_plot(points, families, *, x_label, out_path):
+def render_pareto_plot(points, families, *, x_label, out_path, y_label="Average Dice (%)", x_log=False, decorate=None):
     """Draw the overview + zoom-inset scatter for already-collected points and
     write it to `out_path`. Shared by this script and its fold1-only
     latency/FLOPs counterparts (generate_pareto_plot_latency_fold1.py,
     generate_pareto_plot_flops_fold1.py) so all three stay visually identical
     and only differ in what goes on the x axis."""
     frontier = set(pareto_frontier(points))
-    dense_names, dense_bbox = find_dense_cluster(points)
+    _LABEL_TEXT.clear()
+    low = [n for n in points if n in OFFSCALE_LOW]
+    if low and len(low) < len(points):
+        ys = [y for n, (_, y) in points.items() if n not in OFFSCALE_LOW]
+        span = max(ys) - min(ys)
+        floor = min(ys) - 0.06 * span
+        points = dict(points)
+        for n in low:
+            if points[n][1] < floor:
+                _LABEL_TEXT[n] = f"{n} ({points[n][1]:.1f}) ↓"
+                points[n] = (points[n][0], floor)
+    # On a log x axis the points spread out enough to label in place, and
+    # find_dense_cluster's linear normalization would pick the wrong cluster.
+    dense_names, dense_bbox = (None, None) if x_log else find_dense_cluster(points)
     dense_set = set(dense_names or [])
     sparse_names = [n for n in points if n not in dense_set]
 
     fig, ax = plt.subplots(figsize=(12.5, 9.5), facecolor="white")
     ax.set_facecolor("white")
+    if x_log:
+        ax.set_xscale("log")
 
     # Every point gets its marker on the overview; only the sparse ones get
     # an on-canvas label -- the dense cluster's labels move into the inset.
@@ -384,9 +414,9 @@ def render_pareto_plot(points, families, *, x_label, out_path):
         fx, fy = zip(*frontier_pts)
         ax.plot(fx, fy, color=FRONTIER_COLOR, linestyle="--", linewidth=1.1, alpha=0.55, zorder=2)
 
-    ax.set_xlabel(x_label, fontsize=15)
-    ax.set_ylabel("Average Dice (%)", fontsize=15)
-    ax.tick_params(axis="both", labelsize=12)
+    ax.set_xlabel(x_label, fontsize=15 * FONT_SCALE)
+    ax.set_ylabel(y_label, fontsize=15 * FONT_SCALE)
+    ax.tick_params(axis="both", labelsize=12 * FONT_SCALE)
     style_axes(ax)
 
     inset_corner = None
@@ -410,7 +440,7 @@ def render_pareto_plot(points, families, *, x_label, out_path):
         axins.set_ylim(y0, y1)
         axins.set_xticks([])
         axins.set_yticks([])
-        axins.set_title("zoomed", fontsize=11, style="italic", color="#555555", pad=6)
+        axins.set_title("zoomed", fontsize=11 * FONT_SCALE, style="italic", color="#555555", pad=6)
 
         # The inset panel's own screen footprint becomes an obstacle for the
         # main overview's sparse labels below, so a label never lands on top
@@ -427,7 +457,7 @@ def render_pareto_plot(points, families, *, x_label, out_path):
             families,
             frontier,
             dense_names,
-            fontsize=12,
+            fontsize=12 * FONT_SCALE,
             leader_color="#777777",
             repel_kwargs={"pad": 1.6, "push": 5.5, "iterations": 800},
         )
@@ -436,7 +466,7 @@ def render_pareto_plot(points, families, *, x_label, out_path):
             ax, axins, loc1=1, loc2=3, fc="none", ec=INSET_EDGE, linestyle=":", linewidth=0.9, alpha=0.8
         )
 
-    add_labels(ax, points, families, frontier, sparse_names, fontsize=12, extra_boxes=sparse_extra_boxes)
+    add_labels(ax, points, families, frontier, sparse_names, fontsize=12 * FONT_SCALE, extra_boxes=sparse_extra_boxes)
 
     handles = [
         Line2D(
@@ -446,7 +476,7 @@ def render_pareto_plot(points, families, *, x_label, out_path):
             color="w",
             markerfacecolor=style["color"],
             markeredgecolor=FRONTIER_COLOR,
-            markersize=9,
+            markersize=9 * FONT_SCALE,
             label=LEGEND_LABEL[family],
         )
         for family, style in FAMILY_STYLE.items()
@@ -454,8 +484,12 @@ def render_pareto_plot(points, families, *, x_label, out_path):
     handles.append(
         Line2D([0], [0], color=FRONTIER_COLOR, linestyle="--", linewidth=1.1, label="Pareto frontier")
     )
-    legend_loc = OPPOSITE_CORNER[inset_corner] if inset_corner else "best"
-    ax.legend(handles=handles, loc=legend_loc, frameon=True, framealpha=0.9, fontsize=12)
+    # Optional extra artists (e.g. vertical marker lines) drawn by the caller;
+    # `decorate(ax)` returns any extra legend handles.
+    if decorate is not None:
+        handles.extend(decorate(ax) or [])
+    legend_loc = LEGEND_LOC or (OPPOSITE_CORNER[inset_corner] if inset_corner else "best")
+    ax.legend(handles=handles, loc=legend_loc, frameon=True, framealpha=0.9, fontsize=12 * FONT_SCALE)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=220, bbox_inches="tight")

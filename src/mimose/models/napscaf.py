@@ -293,8 +293,9 @@ class NAPSCAF(AbstractModel):
     MiMoSe's 3D inputs: in training mode (``is_training``) ``forward`` takes a
     batch of [N, 4, H, W] slices drawn from the 3D patches and returns logits,
     while at inference ``forward``/``predict`` split a [B, 4, H, W, D] volume
-    into its D axial slices, zero-pad H and W to a multiple of 32, and stack
-    the per-slice softmax maps back into a volume.
+    into its D axial slices, zero-pad H and W to a multiple of 32 (or, with
+    ``inference_size``, resize them to legacy's 256x256 and the logits back),
+    and stack the per-slice softmax maps back into a volume.
     Missing modalities are zero-filled, as in legacy's evaluation.
 
     Port deviations (see docs/training.md): the three discarded intermediate
@@ -312,10 +313,16 @@ class NAPSCAF(AbstractModel):
         gate_passes: int = 2,
         pretrained_prior: bool = True,
         slice_chunk: int = 32,
+        inference_size: int | None = None,
     ) -> None:
         super().__init__()
         self.num_cls = num_cls
         self.slice_chunk = slice_chunk
+        # When set, inference resizes each slice to inference_size^2 (legacy feeds 240x240 BraTS
+        # slices resized to 256x256) and resizes the logits back; otherwise slices are zero-padded.
+        if inference_size is not None and int(inference_size) % spatial_multiple:
+            raise ValueError(f"inference_size must be a multiple of {spatial_multiple}, got {inference_size}")
+        self.inference_size = None if inference_size is None else int(inference_size)
         self.net = _NAPSCAF2D(
             outc=num_cls, midc=mid_channels, stages=stages, gate_passes=gate_passes, pretrained_prior=pretrained_prior
         )
@@ -337,22 +344,28 @@ class NAPSCAF(AbstractModel):
         if x.ndim != 5:
             raise RuntimeError(f"NAPSCAF expects a [B, {num_modals}, H, W, D] volume, got {tuple(x.shape)}")
         batch, channels, height, width, depth = x.shape
-        pad_h = (-height) % spatial_multiple
-        pad_w = (-width) % spatial_multiple
 
         # [B, C, H, W, D] -> [B*D, C, H, W]
         slices = x.permute(0, 4, 1, 2, 3).reshape(batch * depth, channels, height, width)
-        slices = F.pad(slices, (0, pad_w, 0, pad_h))
         slice_mask = mask.repeat_interleave(depth, dim=0)
+        if self.inference_size is None:
+            slices = F.pad(slices, (0, (-width) % spatial_multiple, 0, (-height) % spatial_multiple))
+
+        def slice_logits(chunk: torch.Tensor, chunk_mask: torch.Tensor) -> torch.Tensor:
+            if self.inference_size is None:
+                return self.forward_slices(chunk, chunk_mask)[:, :, :height, :width]
+            size = (self.inference_size, self.inference_size)
+            chunk = F.interpolate(chunk, size=size, mode="bilinear", align_corners=False)
+            logits = self.forward_slices(chunk, chunk_mask)
+            return F.interpolate(logits, size=(height, width), mode="bilinear", align_corners=False)
 
         probabilities = torch.cat(
             [
-                self.forward_slices(slices[start : start + self.slice_chunk], slice_mask[start : start + self.slice_chunk])
+                slice_logits(slices[start : start + self.slice_chunk], slice_mask[start : start + self.slice_chunk])
                 .softmax(dim=1)
                 for start in range(0, slices.size(0), self.slice_chunk)
             ]
         )
-        probabilities = probabilities[:, :, :height, :width]
         return probabilities.reshape(batch, depth, self.num_cls, height, width).permute(0, 2, 3, 4, 1)
 
     def predict(self, images: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

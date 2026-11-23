@@ -208,6 +208,33 @@ class ElasticUnet(AbstractModel):
             raise ValueError(f"budget must be positive, got {budget}")
         self._budget.fill_(float(budget))
 
+    def set_budget_ceiling(self, budget: float, iters: int = 60) -> float:
+        """Select the largest subnetwork whose exact parameter count is <= ``budget``.
+
+        ``set_budget(budget)`` can realize a network slightly over budget when a
+        gate group sits at the edge of the budget (the penalty is one-sided and
+        soft). Widths are monotone non-decreasing in the budget, so bisect the
+        selection budget in (0, budget] for the largest value whose realized
+        network fits. Returns the selection budget used (== ``budget`` when the
+        plain selection already fits).
+        """
+        self.set_budget(budget)
+        if self.actual_parameters() <= budget:
+            return float(budget)
+        lo, hi = float(budget) * 1e-3, float(budget)  # lo: far below budget_min -> narrowest widths
+        self.set_budget(lo)
+        if self.actual_parameters() > budget:
+            raise ValueError(f"no subnetwork fits within budget {budget:.0f}")
+        for _ in range(iters):
+            mid = (lo * hi) ** 0.5
+            self.set_budget(mid)
+            if self.actual_parameters() <= budget:
+                lo = mid
+            else:
+                hi = mid
+        self.set_budget(lo)
+        return lo
+
     def _current_z(self) -> Tensor:
         return budget_to_z(self._budget, self.gates.budget_min, self.gates.budget_max)
 

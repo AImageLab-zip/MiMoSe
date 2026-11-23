@@ -14,6 +14,7 @@
 cd /homes/ocarpentiero/MiMoSe
 source /homes/ocarpentiero/MiMoSe/.venv/bin/activate
 
-# Same preprocessing as MST-KDNet (non_empty crop, min 128^3, subject z-score) into napscaf-preprocessed.
+# Legacy NAP-SCAF preprocessing (no crop, per-slice 1/99 percentile uint8 normalisation, see
+# legacy/NAP-SCAF/scripts/preprocess_brats_png.py) into napscaf-legacy-preprocessed.
 # One BraTS23 pass covers both datasets: BraTS18 runs select their subjects through the split files.
 mimose preprocess --config napscaf_23.yaml --dataset-type brats23 --yes

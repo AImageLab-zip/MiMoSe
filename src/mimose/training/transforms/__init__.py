@@ -4,6 +4,7 @@ from typing import Any
 from mimose.enums import TransformKind
 from mimose.training.transforms.base_transforms import TransformManager
 from mimose.training.transforms.imfuse import (
+    ALoRAMoETransformManager,
     IMFuseTransformManager,
     TinyMimosaTransformManager,
 )
@@ -53,12 +54,15 @@ def build_transform_manager(
 
     if resolved_kind == TransformKind.SHASPEC:
         return ShaSpecTransformManager(crop_size=crop_size or (80, 80, 80))
+    if resolved_kind == TransformKind.ALORAMOE:
+        return ALoRAMoETransformManager(crop_size=crop_size or (128, 128, 128))
 
     raise ValueError(f"Unsupported transform kind: {kind}")
 
 
 __all__ = [
     "TransformManager",
+    "ALoRAMoETransformManager",
     "IMFuseTransformManager",
     "TinyMimosaTransformManager",
     "ShaSpecTransformManager",

@@ -9,6 +9,7 @@ import torch
 from mimose.enums import TrainerKind
 from mimose.losses.tiny_mimosa import TinyMimosaLoss
 from mimose.models.elastic_unet import ElasticUnet
+from mimose.training.masking import drop_one_available
 from mimose.training.trainers import ParetoTrainer
 
 INPUT_SHAPE = (32, 32, 32)
@@ -56,6 +57,7 @@ def make_trainer(**overrides) -> ParetoTrainer:
     trainer.gate_lr_scale = overrides.get("gate_lr_scale", 1.0)
     trainer.inplace_distill = overrides.get("inplace_distill", False)
     trainer.distill_alpha = overrides.get("distill_alpha", 0.5)
+    trainer.student_modality_drop = overrides.get("student_modality_drop", False)
 
     trainer.loss_fn = TinyMimosaLoss(num_classes=4)
     trainer.optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
@@ -456,3 +458,62 @@ def test_teacher_is_detached_so_students_do_not_train_the_teacher() -> None:
 
     soft_target_loss(student, teacher_normed.detach()).backward()
     assert teacher.grad is None
+
+
+# ------------------------------------------------------ student modality drop
+
+
+def test_drop_one_available_removes_exactly_one_available_modality() -> None:
+    mask = torch.tensor([[True, True, True, True], [True, False, True, False], [False, False, True, False]])
+
+    for _ in range(50):
+        dropped = drop_one_available(mask)
+        assert not (dropped & ~mask).any()
+        assert dropped.sum(dim=1).tolist() == [3, 1, 1]
+    assert torch.equal(dropped[2], mask[2])
+
+
+def test_drop_one_available_rejects_non_batch_masks() -> None:
+    with pytest.raises(ValueError, match=r"\[B, M\]"):
+        drop_one_available(torch.ones(4, dtype=torch.bool))
+
+
+def _masks_seen(trainer, batch) -> list[torch.Tensor]:
+    seen: list[torch.Tensor] = []
+    model = trainer.model
+    original = model.forward
+
+    def spy(images, mask):
+        seen.append(mask.clone())
+        return original(images, mask)
+
+    model.forward = spy  # type: ignore[method-assign]
+    try:
+        trainer._train_step(batch, epoch=0)
+    finally:
+        model.forward = original  # type: ignore[method-assign]
+    return seen
+
+
+def test_student_modality_drop_keeps_the_teacher_mask_and_thins_the_students() -> None:
+    trainer = make_trainer(
+        budget_sampling="sandwich", budgets_per_step=3,
+        inplace_distill=True, student_modality_drop=True,
+    )
+    batch = sample_batch()
+
+    masks = _masks_seen(trainer, batch)
+
+    assert torch.equal(masks[0], batch["mask"])
+    for student in masks[1:]:
+        assert not (student & ~batch["mask"]).any()
+        assert student.sum().item() == batch["mask"].sum().item() - 1
+
+
+def test_student_modality_drop_runs_the_widest_subnetwork_first_even_without_distillation() -> None:
+    trainer = make_trainer(
+        budget_sampling="sandwich", budgets_per_step=3,
+        inplace_distill=False, student_modality_drop=True,
+    )
+    order = _budget_order(trainer, sample_batch())
+    assert order[0] == pytest.approx(trainer.budget_max)

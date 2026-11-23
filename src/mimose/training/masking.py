@@ -45,4 +45,22 @@ def mae_patch_gate(
     return gates
 
 
-__all__ = ["mae_patch_gate"]
+def drop_one_available(mask: torch.Tensor) -> torch.Tensor:
+    """Per sample, switches off one uniformly chosen available modality of a ``[B, M]`` boolean mask.
+
+    Samples with a single available modality are returned unchanged, so the result is always a
+    non-empty subset of ``mask``.
+    """
+    if mask.ndim != 2:
+        raise ValueError(f"expected a [B, M] modality mask, got {tuple(mask.shape)}")
+    mask = mask.bool()
+    available = mask.sum(dim=1)
+    # Random scores on available modalities only; argmax picks one of them uniformly.
+    scores = torch.rand(mask.shape, device=mask.device).masked_fill(~mask, -1.0)
+    drop = torch.zeros_like(mask)
+    drop[torch.arange(mask.size(0), device=mask.device), scores.argmax(dim=1)] = True
+    drop &= (available > 1).unsqueeze(1)
+    return mask & ~drop
+
+
+__all__ = ["drop_one_available", "mae_patch_gate"]

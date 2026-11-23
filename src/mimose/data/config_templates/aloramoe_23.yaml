@@ -1,0 +1,125 @@
+# Combined ALoRA-MoE reference config for BraTS 2023.
+# This reproduces the legacy ALoRA-MoE recipe (legacy/ALoRA-MoE/configs/brats2018.yaml +
+# train.py + lora_moe_hgd/{datasets,engine,schedule}.py):
+#   - preprocessing: no crop; each modality z-scored over the whole volume, background included
+#     ((x - mean) / (std + 1e-6), norm_mode volume_zscore);
+#   - training data: 128^3 random crops (the config's "adjust to 128^3 for real training"),
+#     independent p=0.5 flips on each axis, no other augmentation; batch size 1;
+#   - missing modalities: each modality dropped with p = 0.2 / 0.3 / 0.4 in curriculum stage
+#     1 / 2 / 3, one restored if all were dropped, zero-filled (train_masking_mode: full, the trainer
+#     applies the legacy drop);
+#   - loss: 0.5 * BCE + 0.5 * Dice on each foreground channel as an independent sigmoid,
+#     curriculum WT -> TC -> ET (ED from epoch 0, + NCR from epoch 10, + ET from epoch 30);
+#   - Adam(lr 3e-4, L2 weight decay 5e-5, no amsgrad), constant lr, 50 epochs, fp32 (legacy's
+#     amp flag is never used), no gradient clipping;
+#   - validation every epoch on full-modality volumes; the best checkpoint is the one tested;
+#   - inference: argmax over the 4 output channels (channel 0 is never trained, as in legacy),
+#     sliding 128^3 windows at 50% overlap with uniform averaging.
+# Deviations kept: the shared fold split replaces legacy's val_ratio split, the best checkpoint is
+# chosen on region (WT/TC/ET) Dice instead of per-label Dice, and logits are resized to the input
+# size (legacy's fixed x8 upsampling from a stride-4 map doubles the size, so it cannot train).
+
+# preprocess
+input_dir: /path/to/unpacked
+output_dir: /path/to/preprocessed/aloramoe-legacy-preprocessed/
+dataset_type: brats23
+
+crop_mode: none
+crop_size: null
+crop_min_size: null
+
+clamp_mode: none
+clamp_percentile: null
+clamp_min: null
+clamp_max: null
+
+norm_mode: volume_zscore
+norm_min_max_range: null
+norm_mean: null
+norm_std: null
+
+yes: false
+
+# training
+data_dir: /path/to/preprocessed/aloramoe-legacy-preprocessed
+art_dir: /path/to/artifacts/aloramoe23
+results_dir: /path/to/results/aloramoe_23
+
+trainer: aloramoe
+model: aloramoe
+loss: aloramoe
+
+custom_model_kwargs:
+  num_cls: 4
+  embed_dim: 64
+  depth: [1, 1, 2, 1]
+  num_heads: [2, 4, 4, 8]
+  lora_r: 8
+  num_experts: 4
+  top_k: 2
+  codewords: 32
+
+custom_loss_kwargs:
+  num_classes: null
+  bce_weight: 0.5
+  # Legacy labels 1/2/3 are the WT/TC/ET shells, i.e. ED (2), NCR (1), ET (3) here.
+  curriculum_classes: [2, 1, 3]
+
+custom_trainer_kwargs:
+  iter_per_epoch: null
+  patch_size: 128
+  curriculum_epochs: [10, 30, 50]
+  missing_drop_p: [0.2, 0.3, 0.4]
+  final_from_best: true
+  debug: false
+  transform_kind: aloramoe
+  train_masking_mode: full
+  val_masking_mode: full
+  grad_clip_norm: null
+  skip_nonfinite_loss: true
+
+# Legacy: torch.optim.Adam(lr=3e-4, weight_decay=5e-5) with a constant learning rate.
+optimizer: adam
+amsgrad: false
+betas: [0.9, 0.999]
+momentum: 0.9
+
+# step with gamma 1.0 keeps the learning rate constant, as in legacy.
+scheduler: step
+poly_total_iters: null
+poly_power: null
+warmuppoly_warmup_iters: null
+cosine_t_max: null
+cosine_eta_min: null
+step_step_size: 50
+step_gamma: 1.0
+multistep_milestones: null
+multistep_gamma: null
+plateau_mode: null
+plateau_factor: null
+plateau_patience: null
+
+lr: 0.0003
+num_epochs: 50
+validation_every: 1
+batch_size: 1
+weight_decay: 0.00005
+num_workers: 8
+precision: fp32
+compile: false
+
+resume: false
+pretrain: null
+seed: 0
+
+fold: 1
+wandb_project: MiMoSe
+wandb_entity: null
+wandb_mode: online
+wandb_run_name: aloramoe23
+push_to_hf: false
+hf_repo: /path/to/huggingface/owner-repo
+
+# testing
+checkpoint_path: /path/to/artifacts/aloramoe23/checkpoints/final_weights_only.safetensors
+output_path: /path/to/results/aloramoe_23/results.txt

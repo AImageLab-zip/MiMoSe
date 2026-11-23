@@ -16,7 +16,7 @@ source /homes/ocarpentiero/MiMoSe/.venv/bin/activate
 export WANDB_CACHE_DIR=/work/phd_mimose/.wandb-cache
 
 mimose train --config napscaf_18.yaml --fold 2 --run-suffix fold2 --seed 0 --try-resume
-mimose test --config napscaf_18.yaml --fold 2 --run-suffix fold2
+mimose test --config napscaf_18.yaml --fold 2 --run-suffix fold2 --precision fp32
 
 # Training completed (we reached the test), so cancel the remaining queued
 # resume submissions of this same job from allsbatcher18.sh's singleton chain.

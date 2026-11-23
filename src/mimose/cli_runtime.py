@@ -63,7 +63,10 @@ def relaunch_with_torchrun(nproc_per_node: int, nnodes: int | None = None) -> No
         # node stays the default everywhere else, so existing runs are unchanged.
         nnodes = topology[0] if topology is not None else 1
 
-    rendezvous: list[str] = []
+    # Single node: --standalone binds the rendezvous store to a free local port
+    # instead of torchrun's fixed default 29500, so several DDP jobs can share
+    # a node without EADDRINUSE.
+    rendezvous: list[str] = ["--standalone"]
     if nnodes > 1:
         if topology is None:
             raise typer.BadParameter(

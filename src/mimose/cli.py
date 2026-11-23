@@ -1409,6 +1409,15 @@ def test(
         ),
         rich_help_panel="Model",
     ),
+    budget_ceiling: bool = typer.Option(
+        False,
+        "--budget-ceiling",
+        help=(
+            "With --budget: if the subnetwork selected for the budget is over it, "
+            "evaluate the largest subnetwork whose exact parameter count fits."
+        ),
+        rich_help_panel="Model",
+    ),
     split_file: Path | None = typer.Option(
         None,
         "--split-file",
@@ -1528,6 +1537,7 @@ def test(
         seed=int(merged.get("seed", 42)),
         precision=Precision(merged.get("precision", Precision.FP32)),
         budget=budget,
+        budget_ceiling=budget_ceiling,
     )
     typer.echo(f"Test report written to {output_file}")
     typer.echo(f"Excel summary written to {output_file.with_suffix('.xlsx')}")
@@ -2071,6 +2081,33 @@ def flops(
         help="Number of untracked warmup runs before timing latency.",
         rich_help_panel="Runtime",
     ),
+    precision: Precision = typer.Option(
+        Precision.FP32,
+        "--precision",
+        help="Profile inference under torch.autocast on CUDA: fp32 (default), fp16, or bf16. "
+        "Ignored on CPU. Does not read the YAML `precision` key.",
+        rich_help_panel="Runtime",
+    ),
+    latency_only: bool = typer.Option(
+        False,
+        "--latency-only",
+        help="Time the whole-volume pass only: skip MAC counting (NaN), kernel/memory "
+        "profiling and the single-patch pass. For slow CPU timing.",
+        rich_help_panel="Runtime",
+    ),
+    half: bool = typer.Option(
+        False,
+        "--half",
+        help="fp16 inference: model weights and inputs in float16 + channels_last_3d, "
+        "under fp16 autocast. CUDA only; leave --precision at fp32.",
+        rich_help_panel="Runtime",
+    ),
+    full_modality_only: bool = typer.Option(
+        False,
+        "--full-modality-only",
+        help="Measure only the all-modalities-present combination instead of all 15.",
+        rich_help_panel="Runtime",
+    ),
     all_configs: bool = typer.Option(
         False,
         "--all",
@@ -2213,6 +2250,10 @@ def flops(
                             custom_model_kwargs=parsed_model_kwargs,
                             device=device,
                             warmup=warmup,
+                            precision=precision.value,
+                            latency_only=latency_only,
+                            full_modality_only=full_modality_only,
+                            half=half,
                         ),
                     )
                 )
@@ -2233,6 +2274,10 @@ def flops(
                             custom_model_kwargs=parsed_model_kwargs,
                             device=device,
                             warmup=warmup,
+                            precision=precision.value,
+                            latency_only=latency_only,
+                            full_modality_only=full_modality_only,
+                            half=half,
                             budget=current_budget,
                             checkpoint=checkpoint,
                         ),
