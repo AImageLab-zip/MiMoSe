@@ -78,7 +78,10 @@ class MCPLTrainer(BaseTrainer):
         # EDiceLoss over the duplicated batch. Upstream runs without deep supervision
         # (--deep_supervised defaults to False), so its ``style[feature_level + 1]`` consistency
         # term is ``segs_S1[0]`` -- the first view's output -- and the MSE compares that view's ET
-        # and TC cosine maps; with deep supervision it would compare the two views' out4 logits.
+        # and NCR cosine maps; with deep supervision it would compare the two views' out4 logits.
+        # This upstream indexing bug is kept on purpose: with legacy's disjoint [ET, NCR, ED]
+        # targets the two maps never overlap, so it is mild (with nested [ET, TC, WT] targets it
+        # pulls ET and TC together and the region prototypes collapse).
         self.views = int(trainer_kwargs.get("views", 2))
         self.deep_supervised = bool(trainer_kwargs.get("deep_supervised", False))
         self.consistency_weight = float(trainer_kwargs.get("consistency_weight", 0.1))
@@ -528,6 +531,7 @@ class MCPLTrainer(BaseTrainer):
                     out4 = seg_outputs[0].float().unflatten(0, (self.views, batch_size))
                     consistency = F.mse_loss(out4[0], out4[1])
                 else:
+                    # Upstream bug, kept: ET vs NCR channels of view 0, not view 0 vs view 1.
                     first_view = seg_outputs[-1].float().unflatten(0, (self.views, batch_size))[0]
                     consistency = F.mse_loss(first_view[:, 0], first_view[:, 1])
                 loss = loss + self.consistency_weight * consistency

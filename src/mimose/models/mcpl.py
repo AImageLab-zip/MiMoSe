@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from mimose.models.abstract_model import AbstractModel
-from mimose.models.region_utils import regions_to_label_one_hot
+from mimose.models.region_utils import disjoint_classes_to_label_one_hot
 
 num_modals = 4
 init_channels = 16
@@ -345,11 +345,13 @@ class MCPL(AbstractModel):
     similarity, and a reconstruction volume via voxel-to-modality-prototype
     similarity (the "resilience"/pretraining objective).
 
-    Like legacy MCPL (``CC_classes = 3``), the class prototypes are the three BraTS regions
-    ``[ET, TC, WT]``: each region's logit is the raw voxel-to-prototype cosine, trained with
-    ``EDiceLoss`` (sigmoid inside, so a region is predicted where its cosine is positive). Only at
-    the output boundary (``mode="segment"`` / ``predict``) are the thresholded regions turned into a
-    4-class one-hot label volume, so the framework's argmax-based evaluation applies unchanged.
+    Like legacy MCPL (``CC_classes = 3``), the class prototypes are the three non-overlapping
+    BraTS classes ``[ET, NCR, ED]`` (``legacy/MCPL/dataset/brats.py:77``; M3AE's nested
+    ``[ET, TC, WT]`` is commented out there): each class logit is the raw voxel-to-prototype
+    cosine, trained with ``EDiceLoss`` (sigmoid inside, so a class is predicted where its cosine is
+    positive). Only at the output boundary (``mode="segment"`` / ``predict``) are the thresholded
+    classes turned into a 4-class one-hot label volume, so the framework's argmax-based evaluation
+    scores the real ET/TC/WT regions (upstream ``test.py`` scores the raw channels as "ET/TC/WT").
     """
 
     def __init__(
@@ -528,7 +530,7 @@ class MCPL(AbstractModel):
         self, x: torch.Tensor, mask: torch.Tensor, mode: str = "segment"
     ) -> torch.Tensor | tuple[list[torch.Tensor], torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor]:
         """``mode="segment"`` (default) returns the 4-class one-hot label volume,
-        ``mode="segment_logits"`` the ``[ET, TC, WT]`` region logits, and
+        ``mode="segment_logits"`` the ``[ET, NCR, ED]`` class logits, and
         ``mode="segment_train"`` the deep-supervision region logits in upstream order plus the
         refined ``cluster_centers``: ``([out4, out3, uout], cluster_centers)``.
         ``mode="reconstruct"`` returns ``(reconstruction, cluster_centers)``
@@ -560,7 +562,7 @@ class MCPL(AbstractModel):
             return [out4_logits, out3_logits, uout], cluster_centers
         if mode == "segment_logits":
             return uout
-        return regions_to_label_one_hot(uout, self.num_cls)
+        return disjoint_classes_to_label_one_hot(uout, self.num_cls)
 
     def reconstruct(self, x: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Non-distributed convenience wrapper around
@@ -591,7 +593,7 @@ class MCPL(AbstractModel):
                     )
                     logits[window] += self(images[window], mask, mode="segment_logits").float()
                     weight[window] += 1
-        return regions_to_label_one_hot(logits / weight, self.num_cls)
+        return disjoint_classes_to_label_one_hot(logits / weight, self.num_cls)
 
     @staticmethod
     def _window_starts(size: int) -> list[int]:

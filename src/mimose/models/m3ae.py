@@ -148,12 +148,35 @@ class M3AE(AbstractModel):
             location = location * batch_size
         slices = []
         for h, w, d in location:
-            if h + size[0] > self.template_shape[0] or w + size[1] > self.template_shape[1] or d + size[2] > self.template_shape[2]:
-                raise RuntimeError(
-                    f"M3AE template {self.template_shape} cannot hold a {size} window at {(h, w, d)}"
-                )
-            slices.append(self.limage[:, :, h : h + size[0], w : w + size[1], d : d + size[2]])
+            need = (h + size[0], w + size[1], d + size[2])
+            source = self.limage
+            if any(n > t for n, t in zip(need, self.template_shape)):
+                if not self.allow_template_padding:
+                    raise RuntimeError(
+                        f"M3AE template {self.template_shape} cannot hold a {size} window at {(h, w, d)}"
+                    )
+                source = self._padded_template(need)
+            slices.append(source[:, :, h : h + size[0], w : w + size[1], d : d + size[2]])
         return torch.cat(slices, dim=0)
+
+    #: Cost benchmarking only (``mimose flops``): the shared benchmark volume can be larger than
+    #: the learned template, which never happens with M3AE's own preprocessing. When set, the
+    #: template is zero-padded (once, cached) to cover the window. The template's values do not
+    #: affect FLOPs, memory or latency, and accuracy tests never set this flag.
+    allow_template_padding: bool = False
+
+    def _padded_template(self, need: tuple[int, int, int]) -> torch.Tensor:
+        cached = getattr(self, "_template_cache", None)
+        if cached is not None and all(c >= n for c, n in zip(cached.shape[-3:], need)):
+            return cached
+        target = [max(n, t) for n, t in zip(need, self.template_shape)]
+        if cached is not None:
+            target = [max(a, b) for a, b in zip(target, cached.shape[-3:])]
+        pad = []
+        for t, base in zip(reversed(target), reversed(self.template_shape)):
+            pad += [0, t - base]
+        self._template_cache = torch.nn.functional.pad(self.limage.detach(), pad)
+        return self._template_cache
 
     def fill_missing(self, x: torch.Tensor, mask: torch.Tensor, location: torch.Tensor | None = None) -> torch.Tensor:
         """Upstream ``x * mask + limage[location] * (1 - mask)``; the template is detached at inference."""

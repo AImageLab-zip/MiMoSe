@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import multiprocessing
+import os
 import sys
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -268,6 +273,30 @@ def softmax_output_hd95_separate_class5(
     return np.concatenate((results_class4, rc_results), axis=1)
 
 
+def _hd95_job(prediction: np.ndarray, target: np.ndarray, include_rc: bool) -> tuple[np.ndarray, np.ndarray]:
+    """HD95 for one [1, H, W, D] prediction/target pair: exactly the serial
+    calls, run on CPU copies so it can execute in a worker process."""
+    prediction_t = torch.from_numpy(prediction)
+    target_t = torch.from_numpy(target)
+    separate_fn = softmax_output_hd95_separate_class5 if include_rc else softmax_output_hd95_separate_class4
+    return softmax_output_hd95_class4(prediction_t, target_t), separate_fn(prediction_t, target_t)
+
+
+@contextlib.contextmanager
+def _hd95_pool():
+    """Process pool for HD95 scoring. MIMOSE_HD95_WORKERS overrides the size;
+    0 keeps the original serial, in-process scoring. Default: all CPUs in
+    this process's affinity mask but one (left to the main process), max 8."""
+    env = os.environ.get("MIMOSE_HD95_WORKERS")
+    workers = int(env) if env is not None else min(len(os.sched_getaffinity(0)) - 1, 8)
+    if workers <= 0:
+        yield None
+        return
+    # spawn, not fork: the parent already holds a CUDA context.
+    with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as pool:
+        yield pool
+
+
 def run_testing(
     *,
     data_dir: Path,
@@ -282,6 +311,7 @@ def run_testing(
     seed: int = 42,
     precision: str | Precision = Precision.FP32,
     budget: float | None = None,
+    budget_ceiling: bool = False,
 ) -> Path:
     if not torch.cuda.is_available():
         raise RuntimeError("Testing currently requires at least one CUDA device")
@@ -325,7 +355,15 @@ def run_testing(
                     f"{model_class.__name__} has no set_budget -- --budget only "
                     "applies to budget-conditioned models (e.g. ElasticUnet)."
                 )
-            model.set_budget(budget)
+            if budget_ceiling:
+                used = model.set_budget_ceiling(budget)
+                print(
+                    f"Budget ceiling: budget {budget:.0f} -> selection budget {used:.0f}, "
+                    f"widths {model.current_widths()}, {model.actual_parameters()} params",
+                    flush=True,
+                )
+            else:
+                model.set_budget(budget)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         if output_path.exists():
@@ -345,7 +383,9 @@ def run_testing(
         total_separate_hd95 = AverageMeter()
         subject_records: list[dict[str, Any]] = []
         total_steps = len(MASKS) * len(test_loader)
-        with torch.no_grad():
+        hd95_queue: deque[tuple[str, np.ndarray, np.ndarray, Any]] = deque()
+        with torch.no_grad(), _hd95_pool() as hd95_pool:
+            hd95_backlog = 2 * hd95_pool._max_workers if hd95_pool is not None else 0
             with Progress(
                 TextColumn("[bold cyan]{task.description}"),
                 BarColumn(bar_width=None),
@@ -361,58 +401,84 @@ def run_testing(
                     total=total_steps,
                     metrics="",
                 )
-                for mask in MASKS:
-                    mask_specific_score = AverageMeter()
-                    mask_specific_hd95 = AverageMeter()
-                    mask_specific_separate_score = AverageMeter()
-                    mask_specific_separate_hd95 = AverageMeter()
-                    mask_tensor = torch.tensor(mask, dtype=torch.bool, device=device).unsqueeze(0)
-                    mask_label = _mask_name(mask)
+                # Subject-major sweep: each subject volume is loaded (and moved to the
+                # GPU) once and all 15 mask combinations run against it, instead of one
+                # full DataLoader pass -- 15 disk reads/decompressions per subject --
+                # per mask. Every per-mask meter is still updated in DataLoader
+                # (subject) order and the per-mask records are emitted in MASKS order
+                # afterwards, so the report, the Excel summary and the per-subject CSV
+                # are identical in content and row order to the previous mask-major
+                # loop.
+                mask_tensors = [
+                    torch.tensor(mask, dtype=torch.bool, device=device).unsqueeze(0) for mask in MASKS
+                ]
+                mask_labels = [_mask_name(mask) for mask in MASKS]
+                mask_scores = [AverageMeter() for _ in MASKS]
+                mask_hd95s = [AverageMeter() for _ in MASKS]
+                mask_separate_scores = [AverageMeter() for _ in MASKS]
+                mask_separate_hd95s = [AverageMeter() for _ in MASKS]
+                mask_records: list[list[dict[str, Any]]] = [[] for _ in MASKS]
 
-                    def score_batch(prediction: torch.Tensor, target: torch.Tensor, sub: str) -> None:
-                        # Runs one batch behind the forward pass that produced `prediction`
-                        # (see the prefetch loop below): by the time this executes, that
-                        # forward's CUDA kernels have had a full iteration to finish, so the
-                        # `.cpu()`/`.numpy()` calls inside dice_fn/hd95 below don't block on
-                        # the GPU -- meanwhile the *next* batch's forward, already launched,
-                        # keeps running concurrently on the GPU while this CPU-bound scoring
-                        # (mostly medpy's HD95 distance transforms) executes.
-                        brats_dice_separate, brats_dice = dice_fn(
-                            output=prediction,
-                            target=target,
-                        )
-                        brats_hd95 = softmax_output_hd95_class4(
-                            output=prediction,
-                            target=target,
-                        )
-                        brats_hd95_separate = hd95_separate_fn(
-                            output=prediction,
-                            target=target,
-                        )
-                        mask_specific_score.update(brats_dice)
+                def score_batch(
+                    prediction: torch.Tensor, target: torch.Tensor, sub: str, mask_index: int
+                ) -> None:
+                    # Runs one forward pass behind the one that produced `prediction`
+                    # (see the prefetch loop below), so the next forward is already
+                    # running on the GPU while this executes. Dice is computed here on the
+                    # GPU; HD95 (medpy distance transforms, the CPU-bound part) is handed to
+                    # the process pool and collected, in submission order, by drain_hd95.
+                    brats_dice_separate, brats_dice = dice_fn(
+                        output=prediction,
+                        target=target,
+                    )
+                    mask_scores[mask_index].update(brats_dice)
+                    mask_separate_scores[mask_index].update(brats_dice_separate)
+                    prediction_np = prediction.to(torch.uint8).cpu().numpy()
+                    target_np = target.to(torch.uint8).cpu().numpy()
+                    if hd95_pool is None:
+                        hd95_result: Any = _hd95_job(prediction_np, target_np, include_rc)
+                    else:
+                        hd95_result = hd95_pool.submit(_hd95_job, prediction_np, target_np, include_rc)
+                    hd95_queue.append((sub, mask_index, brats_dice, brats_dice_separate, hd95_result))
+                    drain_hd95(hd95_backlog)
+
+                def drain_hd95(keep: int) -> None:
+                    # Resolve the oldest HD95 results until at most `keep` are outstanding.
+                    # Each mask's meters and records are updated strictly in submission
+                    # order, i.e. subject order, so averages and the per-subject CSV are
+                    # identical to the serial path.
+                    while len(hd95_queue) > keep:
+                        sub, mask_index, brats_dice, brats_dice_separate, hd95_result = hd95_queue.popleft()
+                        if hd95_pool is not None:
+                            hd95_result = hd95_result.result()
+                        brats_hd95, brats_hd95_separate = hd95_result
+                        mask_specific_score = mask_scores[mask_index]
+                        mask_specific_hd95 = mask_hd95s[mask_index]
+                        mask_specific_separate_score = mask_separate_scores[mask_index]
+                        mask_specific_separate_hd95 = mask_separate_hd95s[mask_index]
+                        mask_label = mask_labels[mask_index]
                         mask_specific_hd95.update(brats_hd95)
-                        mask_specific_separate_score.update(brats_dice_separate)
                         mask_specific_separate_hd95.update(brats_hd95_separate)
-                        subject_records.append(
-                            {
-                                "subject": sub,
-                                "modalities": mask_label,
-                                **{
-                                    f"{label}_dice": float(brats_dice[0, index])
-                                    for index, label in enumerate(evaluate_labels)
-                                },
-                                **{
-                                    f"{label}_dice": float(brats_dice_separate[0, index])
-                                    for index, label in enumerate(separate_labels)
-                                },
-                                **{
-                                    f"{label}_hd95": float(brats_hd95[0, index])
-                                    for index, label in enumerate(evaluate_labels)
-                                },
-                                **{
-                                    f"{label}_hd95": float(brats_hd95_separate[0, index])
-                                    for index, label in enumerate(separate_labels)
-                                },
+                        mask_records[mask_index].append(
+                                {
+                                    "subject": sub,
+                                    "modalities": mask_label,
+                                    **{
+                                        f"{label}_dice": float(brats_dice[0, index])
+                                        for index, label in enumerate(evaluate_labels)
+                                    },
+                                    **{
+                                        f"{label}_dice": float(brats_dice_separate[0, index])
+                                        for index, label in enumerate(separate_labels)
+                                    },
+                                    **{
+                                        f"{label}_hd95": float(brats_hd95[0, index])
+                                        for index, label in enumerate(evaluate_labels)
+                                    },
+                                    **{
+                                        f"{label}_hd95": float(brats_hd95_separate[0, index])
+                                        for index, label in enumerate(separate_labels)
+                                    },
                             }
                         )
                         current_avg = np.asarray(mask_specific_score.avg)[0]
@@ -435,17 +501,20 @@ def run_testing(
                             )
                         progress.update(task_id, advance=1, metrics=metrics_text)
 
-                    # Software-pipelined (prefetch) loop: launch batch i+1's forward
-                    # (async CUDA kernel enqueue, returns immediately) before scoring
-                    # batch i, so the GPU works on i+1 while the CPU scores i. `pending`
-                    # holds the one batch whose forward has been launched but not yet
-                    # scored; it's flushed after the loop for the final batch.
-                    pending: tuple[torch.Tensor, torch.Tensor, str] | None = None
-                    for batch in test_loader:
-                        images = batch["images"].to(device, non_blocking=True)
-                        target = batch["seg"].to(device, non_blocking=True).squeeze(1).long()
-                        amp_dtype = torch.bfloat16 if precision == Precision.BF16 else torch.float16
-                        amp_enabled = Precision(precision) != Precision.FP32 and device.type == "cuda"
+                # Software-pipelined (prefetch) loop: launch forward i+1 (async CUDA
+                # kernel enqueue, returns immediately) before scoring forward i, so the
+                # GPU works on i+1 while the CPU scores i. Forwards run subject by
+                # subject and, within a subject, mask by mask. `pending` holds the one
+                # forward that has been launched but not yet scored; it's flushed after
+                # the loop for the final one.
+                amp_dtype = torch.bfloat16 if precision == Precision.BF16 else torch.float16
+                amp_enabled = Precision(precision) != Precision.FP32 and device.type == "cuda"
+                pending: tuple[torch.Tensor, torch.Tensor, str, int] | None = None
+                for batch in test_loader:
+                    images = batch["images"].to(device, non_blocking=True)
+                    target = batch["seg"].to(device, non_blocking=True).squeeze(1).long()
+                    sub = str(batch["sub"][0])
+                    for mask_index, mask_tensor in enumerate(mask_tensors):
                         with autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
                             output = model.predict(images, mask_tensor)
                         prediction = torch.argmax(output, dim=1)
@@ -453,15 +522,18 @@ def run_testing(
                         if pending is not None:
                             score_batch(*pending)
 
-                        pending = (prediction, target, str(batch["sub"][0]))
+                        pending = (prediction, target, sub, mask_index)
 
-                    if pending is not None:
-                        score_batch(*pending)
+                if pending is not None:
+                    score_batch(*pending)
+                drain_hd95(0)
 
-                    mask_score_avg = np.asarray(mask_specific_score.avg)[0]
-                    mask_hd95_avg = np.asarray(mask_specific_hd95.avg)[0]
-                    mask_separate_score_avg = np.asarray(mask_specific_separate_score.avg)[0]
-                    mask_separate_hd95_avg = np.asarray(mask_specific_separate_hd95.avg)[0]
+                for mask_index, mask_label in enumerate(mask_labels):
+                    subject_records.extend(mask_records[mask_index])
+                    mask_score_avg = np.asarray(mask_scores[mask_index].avg)[0]
+                    mask_hd95_avg = np.asarray(mask_hd95s[mask_index].avg)[0]
+                    mask_separate_score_avg = np.asarray(mask_separate_scores[mask_index].avg)[0]
+                    mask_separate_hd95_avg = np.asarray(mask_separate_hd95s[mask_index].avg)[0]
                     total_score.update(mask_score_avg)
                     total_hd95.update(mask_hd95_avg)
                     total_separate_score.update(mask_separate_score_avg)

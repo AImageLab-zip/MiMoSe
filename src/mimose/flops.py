@@ -171,7 +171,22 @@ def run_flops_analysis(
     warmup: int = 0,
     budget: float | None = None,
     checkpoint: Path | None = None,
+    precision: str = "fp32",
+    latency_only: bool = False,
+    full_modality_only: bool = False,
+    half: bool = False,
 ) -> FlopsReport:
+    """latency_only: time the whole-volume pass only -- no ptflops MAC
+    counting (reported as NaN), no kernel/reserved-memory profiling, and no
+    single-patch pass for patch-based models. Meant for slow CPU timing,
+    where MACs are already known from a GPU run.
+    full_modality_only: measure only the all-modalities-present combination
+    instead of all 15.
+    half: fp16 inference -- model weights and inputs converted to float16
+    (model.half()) in channels_last_3d, run under fp16 autocast so models that
+    create fp32 tensors internally still work. CUDA only."""
+    if half and precision != "fp32":
+        raise ValueError("half=True already runs pure fp16; leave precision at fp32 (no autocast)")
     yaml_config = load_yaml_config(config_path)
     resolved_model_name = resolve_model_name(yaml_config, model_name)
     model_kwargs = merge_model_kwargs(yaml_config, custom_model_kwargs)
@@ -184,6 +199,10 @@ def run_flops_analysis(
     model.eval()
     if hasattr(model, "is_training"):
         model.is_training = False
+    if hasattr(model, "allow_template_padding"):
+        # M3AE: let its learned missing-modality template cover the shared benchmark volume
+        # (cost-neutral; see M3AE.allow_template_padding).
+        model.allow_template_padding = True
 
     if checkpoint is not None:
         # Gate thresholds move during training, so which architecture a budget
@@ -217,9 +236,47 @@ def run_flops_analysis(
         tile_shape=tile_shape,
         device=torch_device,
     )
+    if half:
+        if torch_device.type != "cuda":
+            raise ValueError("half=True (pure fp16) is only supported on CUDA")
+        # channels_last_3d is required, not cosmetic: with the default NCDHW
+        # layout, fp16/bf16 Conv3d bypasses cuDNN and falls back to the generic
+        # vol2col+GEMM path (torch 2.9 + cuDNN 9.10), ~3x SLOWER than fp32
+        # instead of ~3x faster. With the weights in channels_last_3d, cuDNN is
+        # used, and sliding-window patches sliced from the input follow the
+        # weights' layout.
+        model = model.half().to(memory_format=torch.channels_last_3d)
+        prepared_inputs = tuple(
+            PreparedInput(
+                name=p.name,
+                images=(
+                    p.images.half().contiguous(memory_format=torch.channels_last_3d)
+                    if p.images is not None
+                    else None
+                ),
+                input_shape=p.input_shape,
+                note=p.note,
+            )
+            for p in prepared_inputs
+        )
     params = count_parameters(model)
+    combinations = ((True, True, True, True),) if full_modality_only else MODALITY_COMBINATIONS
+    patch_based = hasattr(model, "predict") and any(
+        p.name == "predict" and p.images is not None for p in prepared_inputs
+    )
     measurements: list[PathMeasurement] = []
     for prepared in prepared_inputs:
+        if latency_only and patch_based and prepared.name == "forward":
+            measurements.append(
+                PathMeasurement(
+                    name=prepared.name,
+                    input_shape=prepared.input_shape,
+                    params=params,
+                    per_modality=(),
+                    note="skipped: --latency-only (whole volume only)",
+                )
+            )
+            continue
         if prepared.images is None:
             measurements.append(
                 PathMeasurement(
@@ -246,44 +303,57 @@ def run_flops_analysis(
             continue
 
         per_modality = []
-        for combo in MODALITY_COMBINATIONS:
+        for combo in combinations:
             mask = modality_mask(combo, batch_size=prepared.images.size(0), device=torch_device)
-            macs, peak_memory_bytes = measure_pass(
-                model,
-                images=prepared.images,
-                mask=mask,
-                use_predict=use_predict,
-                device=torch_device,
-            )
-            latency_seconds, latency_std_seconds = measure_latency(
-                model,
-                images=prepared.images,
-                mask=mask,
-                use_predict=use_predict,
-                device=torch_device,
-                warmup=warmup,
-            )
-            kernel_launches, peak_reserved_memory_bytes = measure_kernel_launches_and_memory(
-                model,
-                images=prepared.images,
-                mask=mask,
-                use_predict=use_predict,
-                device=torch_device,
-                warmup=warmup,
-            )
-            per_modality.append(
-                ModalityMeasurement(
-                    modalities=modality_label(combo),
-                    mask=combo,
-                    macs=macs,
-                    flops=macs * 2,
-                    peak_memory_bytes=peak_memory_bytes,
-                    latency_seconds=latency_seconds,
-                    latency_std_seconds=latency_std_seconds,
-                    kernel_launches=kernel_launches,
-                    peak_reserved_memory_bytes=peak_reserved_memory_bytes,
+            # fp16/bf16 profile inference under torch.autocast (CUDA only), the
+            # same way `mimose test --precision` runs it; fp32 leaves it off.
+            # half=True also runs under fp16 autocast: some models (UNET-MFI,
+            # ElasticUNet/RDoll-UNet) create fp32 tensors internally, which
+            # crash against fp16 weights; autocast casts them per op. The
+            # weights are already fp16, so no per-call weight casts are added.
+            with _autocast_for("fp16" if half else precision, torch_device):
+                if latency_only:
+                    macs, peak_memory_bytes = float("nan"), None
+                else:
+                    macs, peak_memory_bytes = measure_pass(
+                        model,
+                        images=prepared.images,
+                        mask=mask,
+                        use_predict=use_predict,
+                        device=torch_device,
+                    )
+                latency_seconds, latency_std_seconds = measure_latency(
+                    model,
+                    images=prepared.images,
+                    mask=mask,
+                    use_predict=use_predict,
+                    device=torch_device,
+                    warmup=warmup,
                 )
-            )
+                if latency_only:
+                    kernel_launches, peak_reserved_memory_bytes = None, None
+                else:
+                    kernel_launches, peak_reserved_memory_bytes = measure_kernel_launches_and_memory(
+                        model,
+                        images=prepared.images,
+                        mask=mask,
+                        use_predict=use_predict,
+                        device=torch_device,
+                        warmup=warmup,
+                    )
+                per_modality.append(
+                    ModalityMeasurement(
+                        modalities=modality_label(combo),
+                        mask=combo,
+                        macs=macs,
+                        flops=macs * 2,
+                        peak_memory_bytes=peak_memory_bytes,
+                        latency_seconds=latency_seconds,
+                        latency_std_seconds=latency_std_seconds,
+                        kernel_launches=kernel_launches,
+                        peak_reserved_memory_bytes=peak_reserved_memory_bytes,
+                    )
+                )
 
         measurements.append(
             PathMeasurement(
@@ -555,6 +625,17 @@ def measure_pass(
         peak_memory_bytes = float(torch.cuda.max_memory_allocated(device))
 
     return float(macs), peak_memory_bytes
+
+
+def _autocast_for(precision: str, device: torch.device):
+    if precision not in {"fp32", "fp16", "bf16"}:
+        raise ValueError(f"precision must be fp32, fp16 or bf16, got {precision!r}")
+    dtype = torch.bfloat16 if precision == "bf16" else torch.float16
+    return torch.autocast(
+        device_type=device.type,
+        dtype=dtype,
+        enabled=precision != "fp32" and device.type == "cuda",
+    )
 
 
 def measure_latency(

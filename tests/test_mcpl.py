@@ -8,9 +8,11 @@ import yaml
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from mimose.losses.config import build_loss_config
+from mimose.losses.edice import labels_to_disjoint_classes
 from mimose.losses.mcpl import MCPLLoss, class_contrastive_loss, mcpl_reconstruction_loss, modal_contrastive_loss
 from mimose.models.config import build_model_config
 from mimose.models.mcpl import MCPL, input_patch_size
+from mimose.models.region_utils import disjoint_classes_to_label_one_hot
 from mimose.training.config import OptimizerConfig, SchedulerConfig
 from mimose.training.trainers.mcpl import MCPLTrainer
 
@@ -314,3 +316,55 @@ def test_mcpl_views_duplicate_each_sample_with_independent_masks_view_major() ->
     assert torch.equal(view_seg[:2], seg) and torch.equal(view_seg[2:], seg)
     assert torch.equal(view_images[0, 1], torch.zeros(input_patch_size, input_patch_size, input_patch_size))
     assert torch.equal(view_images[1], images[1])
+
+
+def test_labels_to_disjoint_classes_follows_legacy_mcpl_order() -> None:
+    labels = torch.tensor([0, 1, 2, 3]).view(1, 4, 1, 1)
+    target = torch.nn.functional.one_hot(labels, num_classes=4).permute(0, 4, 1, 2, 3).float()
+
+    classes = labels_to_disjoint_classes(target)
+
+    # [ET, NCR, ED] for labels background, NCR, ED, ET.
+    expected = torch.tensor([[0, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]], dtype=torch.float)
+    assert torch.equal(classes[0, :, :, 0, 0], expected)
+    assert classes.sum(dim=1).max() <= 1
+
+
+@pytest.mark.parametrize(
+    ("on", "label"),
+    [
+        ((), 0),
+        ((0,), 3),
+        ((1,), 1),
+        ((2,), 2),
+        ((0, 1), 3),
+        ((1, 2), 1),
+        ((0, 2), 3),
+        ((0, 1, 2), 3),
+    ],
+)
+def test_disjoint_classes_decode_with_et_over_ncr_over_ed(on: tuple[int, ...], label: int) -> None:
+    logits = -torch.ones(1, 3, 1, 1, 1)
+    for channel in on:
+        logits[0, channel] = 1.0
+
+    assert disjoint_classes_to_label_one_hot(logits).argmax(dim=1).item() == label
+
+
+def test_disjoint_classes_round_trip_recovers_labels() -> None:
+    target = _random_target(2, 4, 8)
+
+    logits = labels_to_disjoint_classes(target) * 2 - 1
+    decoded = disjoint_classes_to_label_one_hot(logits)
+
+    assert torch.equal(decoded, target)
+
+
+def test_mcpl_training_loss_targets_disjoint_classes() -> None:
+    target = _random_target(1, 4, 8)
+    loss_impl = MCPLLoss(num_classes=4)
+
+    disjoint = loss_impl.training_loss(labels_to_disjoint_classes(target) * 20 - 10, target)["loss"]
+    nested = loss_impl.training_loss(torch.stack((target[:, 3], target[:, 1] + target[:, 3], 1 - target[:, 0]), dim=1) * 20 - 10, target)["loss"]
+
+    assert disjoint < nested

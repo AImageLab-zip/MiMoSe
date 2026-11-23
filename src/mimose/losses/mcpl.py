@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from mimose.losses.config import KwargField, positive_int
-from mimose.losses.edice import edice_loss, labels_to_regions
+from mimose.losses.edice import edice_loss, labels_to_disjoint_classes
 from mimose.losses.m3ae import legacy_region_loss
 
 
@@ -98,7 +98,8 @@ def mcpl_reconstruction_loss(
 
 class MCPLLoss:
     """Loss wrapper for legacy MCPL's fine-tuning segmentation objective, ``EDiceLoss`` (0.7 *
-    region Dice + 0.3 * BCE over the sigmoid ``[ET, TC, WT]`` cosine logits, see ``edice_loss``).
+    region Dice + 0.3 * BCE over the sigmoid cosine logits, see ``edice_loss``), with legacy MCPL's
+    non-overlapping targets ``[ET, NCR, ED]`` (``labels_to_disjoint_classes``).
     The consistency MSE and the class-prototype contrast are added by ``MCPLTrainer``; the
     pretraining stage uses ``mcpl_reconstruction_loss`` instead.
 
@@ -117,13 +118,13 @@ class MCPLLoss:
         return legacy_region_loss(output, target)["loss"]
 
     def training_loss(self, region_logits: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:
-        return edice_loss(region_logits, labels_to_regions(target))
+        return edice_loss(region_logits, labels_to_disjoint_classes(target))
 
     def deep_supervised_training_loss(
         self, seg_outputs: list[torch.Tensor], target: torch.Tensor
     ) -> dict[str, torch.Tensor]:
         """``for l in segs_S1: loss_ += criterion(l, labels_S1)`` (``legacy/MCPL/train.py``)."""
-        regions = labels_to_regions(target)
+        regions = labels_to_disjoint_classes(target)
         cross = target.new_tensor(0.0)
         dice = target.new_tensor(0.0)
         for output in seg_outputs:

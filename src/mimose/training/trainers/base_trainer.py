@@ -327,7 +327,12 @@ class BaseTrainer(AbstractTrainer):
         if self.device.type != "cuda":
             LOGGER.warning("--compile requested but device is %s; skipping compilation", self.device)
             return
-        self.model = torch.compile(self.model, mode="reduce-overhead")
+        # MIMOSE_COMPILE_MODE overrides the mode. On RTX Pro 6000 (bf16 +
+        # channels_last_3d, fixed-width 3D U-Net) "max-autotune-no-cudagraphs"
+        # measured 235 ms/step vs 283 ms for "default" and 383 ms uncompiled.
+        mode = os.environ.get("MIMOSE_COMPILE_MODE", "reduce-overhead")
+        LOGGER.info("torch.compile mode=%s", mode)
+        self.model = torch.compile(self.model, mode=mode)
 
     def _build_optimizer(
         self,

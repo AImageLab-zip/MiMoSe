@@ -61,6 +61,7 @@ class ModelKind(StrEnum):
     A2FSEG = "a2fseg"
     TINYMIMOSA = "tinymimosa"
     SIMPLEUNET = "simpleunet"
+    NONET = "nonet"
     ELASTICUNET = "elasticunet"
     MANYMIMOSAS = "manymimosas"
     MANYMIMOSASKD = "manymimosaskd"
