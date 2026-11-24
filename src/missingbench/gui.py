@@ -601,16 +601,11 @@ class AutoCommandForm(ttk.Frame):
                 if raw == "":
                     raise ValueError(f"{name.replace('_', ' ').title()} is required.")
                 converted[name] = Path(raw)
-            elif name == "crop_size":
-                converted[name] = parse_crop_size(self._parse_space_separated(raw, int))
-            elif name == "crop_min_size":
-                converted[name] = parse_crop_size(self._parse_space_separated(raw, int))
-            elif name == "clamp_percentile":
-                converted[name] = parse_percentile(self._parse_space_separated(raw, float))
-            elif name == "clamp_min":
-                converted[name] = parse_clamp(self._parse_space_separated(raw, int))
-            elif name == "clamp_max":
-                converted[name] = parse_clamp(self._parse_space_separated(raw, int))
+            elif name in ("crop_size", "crop_min_size"):
+                # Length/type checks happen in preprocessing.config (_require_tuple).
+                converted[name] = tuple(self._parse_space_separated(raw, int)) if raw else None
+            elif name in ("clamp_percentile", "clamp_min", "clamp_max"):
+                converted[name] = tuple(self._parse_space_separated(raw, float)) if raw else None
             elif _is_tuple_of_ints(annotation) and raw != "":
                 converted[name] = tuple(self._parse_space_separated(raw, int))
             elif _is_tuple_of_floats(annotation) and raw != "":
