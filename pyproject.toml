@@ -3,28 +3,19 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "MiMoSe"
+name = "missingbench"
 version = "0.0.2"
 description = "This repository provides a unified benchmark for brain tumor segmentation under missing modality conditions, built on the BraTS 2023 dataset. It offers a standardized framework to fairly reproduce, evaluate, and compare state-of-the-art methods designed for incomplete multimodal medical imaging."
 readme = "README.md"
 requires-python = "==3.12.*"
 license = { text = "MIT" }
 authors = [
-  { name = "Omar Carpentiero", email = "omar.carpentiero@unimore.it" },
-  { name = "Kevin Marchesini", email = "kevin.marchesini@unimore.it" },
-  { name = "Vittorio Pipoli", email = "vittorio.pipoli@unimore.it" },
-  { name = "Alessia Saporita", email = "alessia.saporita@unimore.it" },
-  { name = "Costantino Grana", email = "costantino.grana@unimore.it" },
-    { name = "Federico Bolelli", email = "federico.bolelli@unimore.it" }
+  { name = "Anonymous" },
 ]
 dependencies = [
     "causal-conv1d>=1.4.0",
     "mamba-ssm",
     "dynamic-network-architectures>=0.4.3",
-    "fastapi>=0.128.0",
-    "python-dotenv>=1.2.1",
-    "python-multipart>=0.0.20",
-    "uvicorn>=0.40.0",
     "h5py>=3.16.0",
     "huggingface_hub>=0.34.0",
     "matplotlib>=3.10.9",
@@ -62,7 +53,7 @@ dev = [
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-mimose = [
+missingbench = [
   "data/dummy_brain.npz",
   "data/configs/*.yaml",
   "data/config_templates/*.yaml",
@@ -75,16 +66,8 @@ mimose = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
 [tool.uv]
 environments = ["sys_platform == 'linux'"]
-
-[tool.uv.sources]
-causal-conv1d = { url = "https://github.com/AImageLab-zip/MiMoSe/releases/download/wheels-cu128-py312-v1/causal_conv1d-1.6.2.post1-cp312-cp312-linux_x86_64.whl" }
-mamba-ssm = { url = "https://github.com/AImageLab-zip/MiMoSe/releases/download/wheels-cu128-py312-v1/mamba_ssm-2.3.2.post1-cp312-cp312-linux_x86_64.whl" }
-torch = { url = "https://github.com/homarone00/torch-pascal-builds/releases/download/v2.9.1-pascal-r2/torch-2.9.1-cp312-cp312-linux_x86_64.whl" }
 
 [tool.ruff]
 line-length = 88
@@ -97,12 +80,6 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.12"
 strict = true
 
-[dependency-groups]
-dev = [
-    "nodeocc>=1.0.26",
-]
-
 [project.scripts]
-mimose = "mimose.cli:app"
-mimose-gui = "mimose.gui:launch"
-mimose-runner = "runner.app:main"
+missingbench = "missingbench.cli:app"
+missingbench-gui = "missingbench.gui:launch"

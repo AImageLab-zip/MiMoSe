@@ -4,9 +4,9 @@ This document explains how to extend the evaluation path.
 
 Relevant files:
 
-- `src/mimose/checkpoints.py`
-- `src/mimose/testing/pipeline.py`
-- `src/mimose/cli.py`
+- `src/missingbench/checkpoints.py`
+- `src/missingbench/testing/pipeline.py`
+- `src/missingbench/cli.py`
 - model modules implementing `predict(images, mask)`
 
 ## Mental Model

@@ -4,12 +4,12 @@ This document explains how to extend the preprocessing stack in detail.
 
 Relevant files:
 
-- `src/mimose/preprocessing/config.py`
-- `src/mimose/preprocessing/cropping.py`
-- `src/mimose/preprocessing/clamping.py`
-- `src/mimose/preprocessing/normalization.py`
-- `src/mimose/preprocessing/pipeline.py`
-- `src/mimose/cli.py`
+- `src/missingbench/preprocessing/config.py`
+- `src/missingbench/preprocessing/cropping.py`
+- `src/missingbench/preprocessing/clamping.py`
+- `src/missingbench/preprocessing/normalization.py`
+- `src/missingbench/preprocessing/pipeline.py`
+- `src/missingbench/cli.py`
 
 ## Mental Model
 
@@ -110,7 +110,7 @@ If you are adding a new dataset layout, this file usually needs changes.
    - add fields to `CropConfig`
    - validate them in `build_crop_config(...)`
    - expose them in `cli.py`
-6. Test it through `mimose preprocess`.
+6. Test it through `missingbench preprocess`.
 
 ### Add a custom clamp mode
 

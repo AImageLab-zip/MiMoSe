@@ -4,11 +4,11 @@ This document explains how to extend dataset loading and split handling.
 
 Relevant files:
 
-- `src/mimose/datasets/base.py`
-- `src/mimose/datasets/imfuse.py`
-- `src/mimose/datasets/config.py`
-- `src/mimose/data/splits/`
-- `src/mimose/preprocessing/pipeline.py`
+- `src/missingbench/datasets/base.py`
+- `src/missingbench/datasets/imfuse.py`
+- `src/missingbench/datasets/config.py`
+- `src/missingbench/data/splits/`
+- `src/missingbench/preprocessing/pipeline.py`
 
 ## Mental Model
 
@@ -56,7 +56,7 @@ Create a new loader module when:
 
 Typical steps:
 
-1. create a new dataset module under `src/mimose/datasets/`
+1. create a new dataset module under `src/missingbench/datasets/`
 2. subclass `BaseDataset`
 3. implement `build_sample(...)`
 4. implement `__getitem__(...)`
@@ -74,7 +74,7 @@ Typical steps:
 
 ## Split Files
 
-The active split path uses JSON under `src/mimose/data/splits/`.
+The active split path uses JSON under `src/missingbench/data/splits/`.
 
 Each dataset section typically contains:
 

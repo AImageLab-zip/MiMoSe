@@ -26,10 +26,10 @@ if __name__ == '__main__':
             'flairt1cet1t2']
     
     test_transforms = 'Compose([NumpyType((np.float32, np.int64)),])'
-    #datapath = '/work/grana_neuro/missing_modalities/BRATS2023_Training_npy'
+    #datapath = '/path/to/missing_modalities/BRATS2023_Training_npy'
 
     test_file = 'datalist/test15splits.csv'
-    #resume = '/work/grana_neuro/missing_modalities/UHVED/output_ROP4/best.pth'
+    #resume = '/path/to/missing_modalities/UHVED/output_ROP4/best.pth'
     num_cls = 4
     dataname = 'BRATS2023'
 

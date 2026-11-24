@@ -4,7 +4,7 @@ import random
 
 random.seed(42)
 # Dataset path
-data_dir = "/work/grana_neuro/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData"
+data_dir = "/path/to/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData"
 all_cases = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
 
 total_count = len(all_cases)

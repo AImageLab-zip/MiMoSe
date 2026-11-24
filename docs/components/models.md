@@ -4,13 +4,13 @@ This document explains how to add or modify models in detail.
 
 Relevant files:
 
-- `src/mimose/models/config.py`
-- `src/mimose/models/abstract_model.py`
-- `src/mimose/models/IMFuse.py`
-- `src/mimose/models/mmformer.py`
-- `src/mimose/models/dcseg.py`
-- `src/mimose/models/rfnet.py`
-- `src/mimose/enums.py`
+- `src/missingbench/models/config.py`
+- `src/missingbench/models/abstract_model.py`
+- `src/missingbench/models/IMFuse.py`
+- `src/missingbench/models/mmformer.py`
+- `src/missingbench/models/dcseg.py`
+- `src/missingbench/models/rfnet.py`
+- `src/missingbench/enums.py`
 
 ## Mental Model
 
@@ -21,7 +21,7 @@ Model selection is driven by:
 3. dynamic resolution inside `models/config.py`
 4. model construction from `model_class(**model_kwargs)`
 
-The runtime expects models to be normal PyTorch modules, but also to conform to the MiMoSe inference contract.
+The runtime expects models to be normal PyTorch modules, but also to conform to the MissingBench inference contract.
 
 ## Required Base Contract
 
@@ -31,9 +31,9 @@ All active models should:
 2. implement `forward(...)`
 3. implement `predict(images, mask)`
 
-The `predict(...)` method is mandatory for `mimose test`.
+The `predict(...)` method is mandatory for `missingbench test`.
 
-`predict(...)` is not just a duplicate of `forward(...)`. It is the test-time inference method used by [src/mimose/testing/pipeline.py](../../src/mimose/testing/pipeline.py), where the runtime calls:
+`predict(...)` is not just a duplicate of `forward(...)`. It is the test-time inference method used by [src/missingbench/testing/pipeline.py](../../src/missingbench/testing/pipeline.py), where the runtime calls:
 
 ```python
 output = model.predict(images, mask)
@@ -52,11 +52,11 @@ Depending on the model family, `predict(...)` may:
 - remap modalities before inference
 - disable training-only branches or auxiliary outputs
 
-The important point is that `mimose test` expects a final segmentation prediction tensor, not the full training tuple returned by some trainer-specific `forward(...)` implementations.
+The important point is that `missingbench test` expects a final segmentation prediction tensor, not the full training tuple returned by some trainer-specific `forward(...)` implementations.
 
 ## Add a New Model Module
 
-1. create `src/mimose/models/my_model.py`
+1. create `src/missingbench/models/my_model.py`
 2. define a public model class
 3. inherit from `AbstractModel`
 4. implement training forward behavior
@@ -81,14 +81,14 @@ If you want the easiest integration path, make the model IMFuse-compatible:
 
 1. start from an `imfuse` YAML config
 2. make `forward(...)` return `(fuse_pred, sep_preds, prm_preds)`
-3. keep the output shapes consistent with [src/mimose/losses/imfuse.py](../../src/mimose/losses/imfuse.py)
+3. keep the output shapes consistent with [src/missingbench/losses/imfuse.py](../../src/missingbench/losses/imfuse.py)
 4. make `predict(...)` return the final fused segmentation tensor only
 
-This lets you reuse the existing [IMFuseTrainer](../../src/mimose/training/trainers/imfuse.py) and IMFuse-style training path without creating a new trainer family first.
+This lets you reuse the existing [IMFuseTrainer](../../src/missingbench/training/trainers/imfuse.py) and IMFuse-style training path without creating a new trainer family first.
 
 ## How Resolution Works
 
-The model resolver scans modules under `src/mimose/models/` and compares normalized names.
+The model resolver scans modules under `src/missingbench/models/` and compares normalized names.
 
 That means:
 
@@ -178,5 +178,5 @@ Before calling a model extension done, verify:
 - it can be selected from YAML
 - it can be selected from CLI
 - training forward matches the chosen trainer
-- `predict(images, mask)` works under `mimose test`
+- `predict(images, mask)` works under `missingbench test`
 - checkpoint save/load works without key mismatches

@@ -1,8 +1,6 @@
 # M3AE: Multimodal Representation Learning for Brain Tumor Segmentation with Missing Modalities
 [[Paper]](https://arxiv.org/abs/2303.05302) [[Code]](https://github.com/ccarliu/m3ae)  AAAI 2023
 ![m3ae overview](/m3ae/fig/M3AE.png)
-✅ Tested at commit: 
-8359e49
 ## Requirements
 Code was tested using:
 ```

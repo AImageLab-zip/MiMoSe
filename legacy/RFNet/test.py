@@ -16,9 +16,9 @@ if __name__ == '__main__':
             'flairt1cet1t2']
     
     test_transforms = 'Compose([NumpyType((np.float32, np.int64)),])'
-    datapath = '/work/grana_neuro/missing_modalities/BRATS2018_Training_none_npy'
+    datapath = '/path/to/missing_modalities/BRATS2018_Training_none_npy'
     test_file = 'datalist/Brats18_test15splits.csv'
-    resume = '/work/grana_neuro/missing_modalities/RFNet/output18/best.pth'
+    resume = '/path/to/missing_modalities/RFNet/output18/best.pth'
     num_cls = 4
     dataname = 'BRATS2018'
 

@@ -17,8 +17,8 @@ if __name__ == '__main__':
     resume = args.resume
     savepath = args.savepath
     
-    #datapath = '/work/grana_neuro/missing_modalities/BRATS2023_Training_npy'
-    #resume = '/work/grana_neuro/missing_modalities/RobustSeg/output_RS6/best.pth'
+    #datapath = '/path/to/missing_modalities/BRATS2023_Training_npy'
+    #resume = '/path/to/missing_modalities/RobustSeg/output_RS6/best.pth'
     masks = [[False, False, False, True], [False, True, False, False], [False, False, True, False], [True, False, False, False],
          [False, True, False, True], [False, True, True, False], [True, False, True, False], [False, False, True, True], [True, False, False, True], [True, True, False, False],
          [True, True, True, False], [True, False, True, True], [True, True, False, True], [False, True, True, True],

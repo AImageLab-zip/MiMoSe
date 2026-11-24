@@ -1,0 +1,91 @@
+# Plain U-Net b10 (36.5M parameters) reference config for BraTS 2023.
+# A uniform-width nnU-Net-style U-Net (PlainUnet) with stage widths [40, 80, 168, 320, 648]; all 16 plainunet_*
+# configs share the same recipe and differ only in features_per_stage.
+
+# preprocess
+input_dir: /path/to/unpacked
+output_dir: /path/to/preprocessed/plainunet-preprocessed
+dataset_type: brats23
+
+crop_mode: non_empty
+crop_size: null
+crop_min_size: [128, 128, 128]
+
+clamp_mode: none
+clamp_percentile: null
+clamp_min: null
+clamp_max: null
+
+norm_mode: subject_zscore
+norm_min_max_range: null
+norm_mean: null
+norm_std: null
+
+yes: false
+
+# training
+data_dir: /path/to/preprocessed/plainunet-preprocessed
+art_dir: /path/to/artifacts/plainunet_b1023
+results_dir: /path/to/results/plainunet_b10_23
+
+trainer: imfuse
+model: plainunet
+loss: dicece
+
+custom_model_kwargs:
+  num_cls: 4
+  input_shape: [128, 128, 128]
+  features_per_stage: [40, 80, 168, 320, 648]
+
+custom_loss_kwargs:
+  dice_weight: 0.5
+  ce_weight: 0.5
+  eps: 0.001
+
+custom_trainer_kwargs:
+  transform_kind: imfuse
+  patch_size: 128
+  train_masking_mode: random
+  val_masking_mode: validation
+
+optimizer: adamw
+betas: [0.9, 0.999]
+momentum: 0.9
+
+scheduler: poly
+poly_total_iters: 1000
+poly_power: 0.9
+cosine_t_max: null
+cosine_eta_min: null
+step_step_size: null
+step_gamma: null
+multistep_milestones: null
+multistep_gamma: null
+plateau_mode: null
+plateau_factor: null
+plateau_patience: null
+
+lr: 0.0003
+num_epochs: 1000
+validation_every: 10
+batch_size: 3
+weight_decay: 0.0001
+num_workers: 12
+precision: bf16
+compile: false
+
+resume: false
+pretrain: null
+seed: 999
+
+fold: 1
+wandb_project: MissingBench
+wandb_entity: null
+wandb_mode: online
+wandb_run_name: plainunet_b1023
+push_to_hf: false
+hf_repo: /path/to/huggingface/owner-repo
+
+# testing
+checkpoint_path: /path/to/artifacts/plainunet_b1023/checkpoints/final_weights_only.safetensors
+output_path: /path/to/results/plainunet_b10_23/results.txt

@@ -1,0 +1,119 @@
+# MatUNet (Matryoshka U-Net) reference config for BraTS 2023.
+#
+# A budget-conditioned MatUnet supernet: one set of shared weights serves a whole range of
+# parameter budgets. Each optimizer step samples `budgets_per_step` budgets with sandwich
+# sampling (the widest subnetwork is always included), evaluates the matching subnetworks on the
+# same batch, and steps once on the accumulated gradient.
+#
+# The budget range is implied by custom_model_kwargs.features_per_stage: the supernet spans
+# uniform 1/8 width up to full width, i.e. ~1.43M .. ~91.4M parameters for
+# (64, 128, 256, 512, 1024). Preprocessing matches the plainunet_* configs exactly.
+#
+# Test a given budget with `missingbench test --config matunet_23.yaml --budget <params> --budget-ceiling`.
+
+# preprocess
+input_dir: /path/to/unpacked
+output_dir: /path/to/preprocessed/plainunet-preprocessed
+dataset_type: brats23
+
+crop_mode: non_empty
+crop_size: null
+crop_min_size: [128, 128, 128]
+
+clamp_mode: none
+clamp_percentile: null
+clamp_min: null
+clamp_max: null
+
+norm_mode: subject_zscore
+norm_min_max_range: null
+norm_mean: null
+norm_std: null
+
+yes: false
+
+# training
+data_dir: /path/to/preprocessed/plainunet-preprocessed
+art_dir: /path/to/artifacts/matunet23
+results_dir: /path/to/results/matunet_23
+
+trainer: matunet
+model: matunet
+loss: dicece
+
+custom_model_kwargs:
+  num_cls: 4
+  input_shape: [128, 128, 128]
+  features_per_stage: [64, 128, 256, 512, 1024]  # the widest architecture
+  group_size: 4        # channel granularity of the gates
+  tau: 0.05            # overwritten each epoch by the trainer's anneal
+
+custom_loss_kwargs:
+  dice_weight: 0.5
+  ce_weight: 0.5
+  eps: 0.001
+
+custom_trainer_kwargs:
+  transform_kind: imfuse
+  patch_size: 128
+  train_masking_mode: random
+  val_masking_mode: validation
+  # --- multi-budget training ---
+  budgets_per_step: 3        # subnets per step; cost scales linearly
+  budget_sampling: sandwich  # widest is always sampled, so it can be the teacher
+  local_window_ratio: 1.5    # 30M centre -> 20M / 30M / 45M
+  lambda_param: 1.0          # weight of the budget-overshoot penalty
+  tau_start: 0.5             # gate temperature, annealed geometrically ...
+  tau_end: 0.02              # ... to here over num_epochs
+  gate_lr_scale: 1.0         # LR multiplier for the gate thresholds
+  # --- regularisers (off: sandwich sampling only) ---
+  inplace_distill: false       # widest subnetwork's detached output is a soft target
+  distill_alpha: 0.5           # students: 0.5 * label loss + 0.5 * teacher loss
+  student_modality_drop: false # students see one fewer available modality than the teacher
+  cudnn_benchmark: true        # speed only: autotuned conv kernels for the fixed 128^3 patches
+
+optimizer: adamw
+betas: [0.9, 0.999]
+momentum: 0.9
+
+scheduler: poly
+poly_total_iters: 1000
+poly_power: 0.9
+cosine_t_max: null
+cosine_eta_min: null
+step_step_size: null
+step_gamma: null
+multistep_milestones: null
+multistep_gamma: null
+plateau_mode: null
+plateau_factor: null
+plateau_patience: null
+
+# batch_size/lr match the plainunet_* configs: the supernet's widest subnetwork is a
+# (64,128,256,512,1024) Plain U-Net (91,366,608 params), so the training recipe is identical.
+# The budgets_per_step forward/backward passes are sequential and each graph is freed before
+# the next, so peak memory is a single full-width forward.
+lr: 0.0003
+num_epochs: 1000
+validation_every: 10
+batch_size: 3
+weight_decay: 0.0001
+num_workers: 6
+precision: bf16
+compile: false
+
+resume: false
+pretrain: null
+seed: 999
+
+fold: 1
+wandb_project: MissingBench
+wandb_entity: null
+wandb_mode: online
+wandb_run_name: matunet23
+push_to_hf: false
+hf_repo: /path/to/huggingface/owner-repo
+
+# testing
+checkpoint_path: /path/to/artifacts/matunet23/checkpoints/final_weights_only.safetensors
+output_path: /path/to/results/matunet_23/results.txt

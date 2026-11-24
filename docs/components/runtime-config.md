@@ -4,13 +4,13 @@ This document explains how to extend optimizers, schedulers, and other runtime-c
 
 Relevant files:
 
-- `src/mimose/training/config.py`
-- `src/mimose/enums.py`
-- `src/mimose/cli.py`
+- `src/missingbench/training/config.py`
+- `src/missingbench/enums.py`
+- `src/missingbench/cli.py`
 
 ## Mental Model
 
-For runtime objects, MiMoSe usually follows this pattern:
+For runtime objects, MissingBench usually follows this pattern:
 
 1. enum value in `enums.py`
 2. config dataclass in `training/config.py`

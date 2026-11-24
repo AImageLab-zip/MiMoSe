@@ -8,7 +8,7 @@ batch_size_tr:   1 # Batch size for train
 batch_size_va:   1 # Batch size for validationn 
 modalities:      ['flair', 't1', 't1ce', 't2'] 
 path_to_data:    '' # path to dataset
-path_to_log:     '/work/grana_neuro/missing_modalities/MST-KDNet/log' # path to save results
+path_to_log:     '/path/to/missing_modalities/MST-KDNet/log' # path to save results
 progress_p:      0.1 # value between 0-1 shows the number of time we need to report training progress in each epoch
 validation_p:    0.1 # validation percentage
 test_p:          0.2 # Test percentage (20%)
@@ -17,10 +17,10 @@ weight_mispath:  0.6
 weight_content:  0.2
 weight_gsm:      1e11
 dataset:         'brats18'
-patient_dir:     '/work/grana_neuro/MICCAI_BraTS_2018_Data_Training'   # directory with brats data
-root:            '/work/grana_neuro/missing_modalities/MST-KDNet'      # directory with splits
+patient_dir:     '/path/to/MICCAI_BraTS_2018_Data_Training'   # directory with brats data
+root:            '/path/to/missing_modalities/MST-KDNet'      # directory with splits
 debug:           False
 seed:            999
-path_to_latest_model: '/work/grana_neuro/missing_modalities/MST-KDNet/log/brats18_14057' 
+path_to_latest_model: '/path/to/missing_modalities/MST-KDNet/log/brats18_14057' 
 use_style_loss:  False
 

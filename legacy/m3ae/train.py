@@ -158,7 +158,7 @@ def main(args):
     ### Model Preparation
     model_1 = Unet_missing(input_shape = [128,128,128], init_channels = 16, out_channels=3, mdp=3, pre_train = False, deep_supervised = args.deep_supervised, patch_shape = args.patch_shape)
     model_1 = nn.DataParallel(model_1)
-    args.checkpoint = '/work/grana_neuro/missing_modalities/m3ae/runs/m3ae_pretrain/model_1model_best_599.pth.tar'
+    args.checkpoint = '/path/to/missing_modalities/m3ae/runs/m3ae_pretrain/model_1model_best_599.pth.tar'
     ck = torch.load(args.checkpoint, map_location=torch.device('cpu'))
     del ck['state_dict']['module.unet.up1conv.weight'] #in pre-training out-channels = 4, during training out-channels = 3
     del ck['state_dict']['module.unet.up1conv.bias'] 

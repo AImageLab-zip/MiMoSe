@@ -59,7 +59,7 @@ def split(brain_dir, save_dir, n_train=260, n_val=40, n_split=3):
 
 if __name__ == '__main__':
     parse = argparse.ArgumentParser()
-    parse.add_argument('--brain_dir', type=str, default='/work/grana_neuro/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/')
+    parse.add_argument('--brain_dir', type=str, default='/path/to/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/')
     #parse.add_argument('--brain_dir', type=str, default='../dataset/MICCAI_BraTS_2018_Data_Training/HGG')
     parse.add_argument('--save_dir', type=str, default='./partition')
     parse.add_argument('--n_split', type=int, default=3)

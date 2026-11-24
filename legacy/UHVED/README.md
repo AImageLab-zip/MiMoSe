@@ -4,9 +4,6 @@
   <img src="fig/image.png">
 </p>
 
-✅ Tested at commit: 
-8359e49
-
 ## How to run
 Run U-HVED using the same [data preprocessing as IM-Fuse](/OLD_README.md).
 After running the preprocessing, create the following python environment:

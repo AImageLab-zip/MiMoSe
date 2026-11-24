@@ -1,8 +1,0 @@
-.idea
-__pychache__/
-rehydil_venv/
-OLD_README.md
-sbatch_files/
-scheduler_fixer.py
-outputs/
-test_debug.py

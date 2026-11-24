@@ -3,8 +3,6 @@
 [[Paper]](https://www.nature.com/articles/s41598-025-07466-9) [[Code]](https://github.com/liufangcoca-515/InOutFusion-main) Nature 2025
 ![InOutFusion overview](/InOutFusion/inoutfusion.jpg)
 
-✅ Tested at commit: 
-??????? 
 
 ## Requirements
 This code was tested using:

@@ -6,11 +6,11 @@
 .codex
 *wandb*
 *.vscode*
-src/mimose/data/configs_2
+src/missingbench/data/configs_2
 *venv*
 ReHyDIL/outputs
 *wandb*
-src/mimose/data/configs
+src/missingbench/data/configs
 *claude*
 .*
 !.env.example

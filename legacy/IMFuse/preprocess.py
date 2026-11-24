@@ -50,8 +50,8 @@ if __name__ == '__main__':
 
     src_path = args.input_path
     tar_path = args.output_path
-    #src_path = '/work/grana_neuro/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'
-    #tar_path = '/work/grana_neuro/missing_modalities/BRATS2023_Training_mmFormer_npy'
+    #src_path = '/path/to/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'
+    #tar_path = '/path/to/missing_modalities/BRATS2023_Training_mmFormer_npy'
 
     name_list = os.listdir(src_path)
     if not os.path.exists(os.path.join(tar_path, 'vol')):

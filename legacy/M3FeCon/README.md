@@ -1,8 +1,6 @@
 # Missing as Masking: Arbitrary Cross-modal Feature Reconstruction for Incomplete Multimodal Brain Tumor Segmentation
 [[Paper]](https://papers.miccai.org/miccai-2024/paper/0067_paper.pdf)  MICCAI 2024
 ![Missing as Masking overview](/M3FeCon/fig/M3FeCon.png)
-✅ Tested at commit: 
-8359e49
 ## Requirements
 Code was tested using:
 ```

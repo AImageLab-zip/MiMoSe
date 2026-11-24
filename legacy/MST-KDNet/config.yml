@@ -8,7 +8,7 @@ batch_size_tr:   1 # Batch size for train
 batch_size_va:   1 # Batch size for validationn 
 modalities:      ['t2f', 't1n', 't1c', 't2w'] # fets: ['flair', 't1', 't1ce', 't2'] brats: ['t2f', 't1n', 't1c', 't2w']
 path_to_data:    '/data/birth/cyf/shared_data/BraTS2024' # path to dataset
-path_to_log:     '/work/grana_neuro/missing_modalities/MST-KDNet/log' # path to save results
+path_to_log:     '/path/to/missing_modalities/MST-KDNet/log' # path to save results
 progress_p:      0.1 # value between 0-1 shows the number of time we need to report training progress in each epoch
 validation_p:    0.1 # validation percentage
 test_p:          0.2 # Test percentage (20%)

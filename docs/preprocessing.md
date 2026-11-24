@@ -1,6 +1,6 @@
 # Preprocessing
 
-`mimose preprocess` prepares a dataset before training or evaluation.
+`missingbench preprocess` prepares a dataset before training or evaluation.
 
 It currently supports three preprocessing stages:
 
@@ -10,12 +10,12 @@ It currently supports three preprocessing stages:
 
 You can configure preprocessing in two places:
 
-- CLI flags passed to `mimose preprocess`
+- CLI flags passed to `missingbench preprocess`
 - a YAML config file passed with `--config`
 
 If the same parameter is provided in both places, the CLI value should override the YAML value.
 
-For the overall MiMoSe YAML format, see [docs/yaml-config.md](yaml-config.md).
+For the overall MissingBench YAML format, see [docs/yaml-config.md](yaml-config.md).
 For a very detailed extension guide for this part of the stack, see [docs/components/preprocessing.md](components/preprocessing.md).
 
 ## Basic Usage
@@ -23,13 +23,13 @@ For a very detailed extension guide for this part of the stack, see [docs/compon
 Run from YAML (recommended):
 
 ```bash
-mimose preprocess --config imfuse_23.yaml
+missingbench preprocess --config imfuse_23.yaml
 ```
 
 Run from CLI:
 
 ```bash
-mimose preprocess \
+missingbench preprocess \
   --input-dir /path/to/brats23 \
   --output-dir /path/to/preprocessed \
   --dataset-type brats23 \
@@ -315,7 +315,7 @@ Each output archive contains:
 
 The validation rules documented here are enforced in:
 
-- [config.py](/home/ocarpentiero/PycharmProjects/IM-Fuse/src/mimose/preprocessing/config.py)
-- [cli.py](/home/ocarpentiero/PycharmProjects/IM-Fuse/src/mimose/cli.py)
+- [config.py](../src/missingbench/preprocessing/config.py)
+- [cli.py](../src/missingbench/cli.py)
 
 If the behavior changes, update this document together with those files.

@@ -1,73 +1,23 @@
-# Extending MiMoSe
+# Extending MissingBench
 
-This document gives a high-level map of how to extend the active `mimose` package under `src/mimose`.
+This document gives a high-level map of how to extend the active `missingbench` package under `src/missingbench`.
 
-In practice, the easiest way to extend MiMoSe is usually to start from an `imfuse` config and add a custom model module that follows the IMFuse-style trainer contract. This is the lowest-friction path because the repository already has a stable `IMFuseTrainer`, `IMFuseLoss`, dataset pipeline, masking logic, and testing flow.
+In practice, the easiest way to extend MissingBench is usually to start from an `imfuse` config and add a custom model module that follows the IMFuse-style trainer contract. This is the lowest-friction path because the repository already has a stable `IMFuseTrainer`, `IMFuseLoss`, dataset pipeline, masking logic, and testing flow.
 
-Concretely, you can add a new file under [src/mimose/models/](/src/mimose/models), define a public class that inherits from [AbstractModel](../src/mimose/models/abstract_model.py), implement `forward(images, mask)` so that training returns `(fuse_pred, sep_preds, prm_preds)` as expected by [IMFuseTrainer](../src/mimose/training/trainers/imfuse.py), and implement `predict(images, mask)` for evaluation. You do not have to manually register the module in a hardcoded registry: [src/mimose/models/config.py](../src/mimose/models/config.py) scans `src/mimose/models/*.py` dynamically and resolves public callables by normalized name, so once the file exists you can usually select it directly from YAML or CLI with `model: your_model_name`.
+Concretely, you can add a new file under [src/missingbench/models/](../src/missingbench/models), define a public class that inherits from [AbstractModel](../src/missingbench/models/abstract_model.py), implement `forward(images, mask)` so that training returns `(fuse_pred, sep_preds, prm_preds)` as expected by [IMFuseTrainer](../src/missingbench/training/trainers/imfuse.py), and implement `predict(images, mask)` for evaluation. You do not have to manually register the module in a hardcoded registry: [src/missingbench/models/config.py](../src/missingbench/models/config.py) scans `src/missingbench/models/*.py` dynamically and resolves public callables by normalized name, so once the file exists you can usually select it directly from YAML or CLI with `model: your_model_name`.
 
-The maintained extension surface is `src/mimose`. The `legacy/` directories are useful for reference and comparison, but they are not the package API you should extend.
+The maintained extension surface is `src/missingbench`. The `legacy/` directories are useful for reference and comparison, but they are not the package API you should extend.
 
 If you need field-by-field or component-by-component instructions, use the detailed guides in [docs/components/README.md](components/README.md).
-
-## External Contributor Workflow
-
-External contributors should work from a fork of the repository. Fork the upstream project, clone your fork locally, and keep the upstream repository configured as a second remote so you can regularly pull the latest changes.
-
-Use `development` as the base branch for new work and open pull requests back into `development`. The `stable` branch is reserved for validated release-ready code, so contributors should not use it as the target for everyday feature, model, trainer, dataset, or documentation PRs.
-
-Typical workflow:
-
-1. Fork the repository on GitHub.
-
-2. Clone your fork locally.
-
-   ```bash
-   git clone <your-fork-url>
-   cd IM-Fuse
-   ```
-
-3. Add the upstream repository as a remote if it is not already configured.
-
-   ```bash
-   git remote add upstream <upstream-repository-url>
-   ```
-
-4. Fetch the latest upstream branches.
-
-   ```bash
-   git fetch upstream
-   ```
-
-5. Update your local `development` branch from upstream.
-
-   ```bash
-   git checkout development
-   git pull upstream development
-   ```
-
-6. Create a feature branch from `development`.
-
-   ```bash
-   git checkout -b my-feature
-   ```
-
-7. Push the feature branch to your fork.
-
-   ```bash
-   git push -u origin my-feature
-   ```
-
-8. Open a pull request from your fork's feature branch into upstream `development`.
 
 ## Extension Flow
 
 Most changes follow the same path:
 
-1. add or modify the implementation in `src/mimose/...`
+1. add or modify the implementation in `src/missingbench/...`
 2. wire the new behavior into config/build logic
 3. expose it through CLI and YAML if users need to select it
-4. update reference configs under `src/mimose/data/configs/`
+4. update reference config templates under `src/missingbench/data/config_templates/`
 5. update the relevant docs
 
 If your change introduces or changes YAML fields, start with [docs/yaml-config.md](yaml-config.md).
@@ -76,23 +26,23 @@ If your change introduces or changes YAML fields, start with [docs/yaml-config.m
 
 These are the main places you will touch:
 
-- [src/mimose/cli.py](../src/mimose/cli.py): CLI entrypoints, option definitions, command wiring
-- [src/mimose/gui.py](../src/mimose/gui.py): GUI surface generated from the CLI
-- [src/mimose/enums.py](../src/mimose/enums.py): shared enum choices exposed across config and CLI
-- [src/mimose/utils/cli_overrides.py](../src/mimose/utils/cli_overrides.py): CLI-over-YAML merge behavior
-- [src/mimose/data/config_templates/](../src/mimose/data/config_templates): shipped config templates copied by `mimose setup`
-- [src/mimose/data/configs/](../src/mimose/data/configs): local reference configs used by the package
-- [src/mimose/data/splits/split.json](../src/mimose/data/splits/split.json): packaged dataset split definition
+- [src/missingbench/cli.py](../src/missingbench/cli.py): CLI entrypoints, option definitions, command wiring
+- [src/missingbench/gui.py](../src/missingbench/gui.py): GUI surface generated from the CLI
+- [src/missingbench/enums.py](../src/missingbench/enums.py): shared enum choices exposed across config and CLI
+- [src/missingbench/utils/cli_overrides.py](../src/missingbench/utils/cli_overrides.py): CLI-over-YAML merge behavior
+- [src/missingbench/data/config_templates/](../src/missingbench/data/config_templates): shipped config templates copied by `missingbench setup`
+- `src/missingbench/data/configs/`: local, path-patched configs written by `missingbench setup` (not shipped; created on first setup)
+- [src/missingbench/data/splits/split.json](../src/missingbench/data/splits/split.json): packaged dataset split definition
 
 ## Preprocessing
 
 The preprocessing stack lives in:
 
-- [src/mimose/preprocessing/config.py](../src/mimose/preprocessing/config.py)
-- [src/mimose/preprocessing/cropping.py](../src/mimose/preprocessing/cropping.py)
-- [src/mimose/preprocessing/clamping.py](../src/mimose/preprocessing/clamping.py)
-- [src/mimose/preprocessing/normalization.py](../src/mimose/preprocessing/normalization.py)
-- [src/mimose/preprocessing/pipeline.py](../src/mimose/preprocessing/pipeline.py)
+- [src/missingbench/preprocessing/config.py](../src/missingbench/preprocessing/config.py)
+- [src/missingbench/preprocessing/cropping.py](../src/missingbench/preprocessing/cropping.py)
+- [src/missingbench/preprocessing/clamping.py](../src/missingbench/preprocessing/clamping.py)
+- [src/missingbench/preprocessing/normalization.py](../src/missingbench/preprocessing/normalization.py)
+- [src/missingbench/preprocessing/pipeline.py](../src/missingbench/preprocessing/pipeline.py)
 
 This is where you extend:
 
@@ -113,12 +63,12 @@ Detailed guide: [docs/components/preprocessing.md](components/preprocessing.md)
 
 The model integration layer lives in:
 
-- [src/mimose/models/abstract_model.py](../src/mimose/models/abstract_model.py)
-- [src/mimose/models/config.py](../src/mimose/models/config.py)
-- [src/mimose/models/IMFuse.py](../src/mimose/models/IMFuse.py)
-- [src/mimose/models/mmformer.py](../src/mimose/models/mmformer.py)
-- [src/mimose/models/dcseg.py](../src/mimose/models/dcseg.py)
-- [src/mimose/models/rfnet.py](../src/mimose/models/rfnet.py)
+- [src/missingbench/models/abstract_model.py](../src/missingbench/models/abstract_model.py)
+- [src/missingbench/models/config.py](../src/missingbench/models/config.py)
+- [src/missingbench/models/IMFuse.py](../src/missingbench/models/IMFuse.py)
+- [src/missingbench/models/mmformer.py](../src/missingbench/models/mmformer.py)
+- [src/missingbench/models/dcseg.py](../src/missingbench/models/dcseg.py)
+- [src/missingbench/models/rfnet.py](../src/missingbench/models/rfnet.py)
 
 This is where you extend:
 
@@ -128,7 +78,7 @@ This is where you extend:
 
 Typical file route:
 
-1. add a new module under `src/mimose/models/`
+1. add a new module under `src/missingbench/models/`
 2. inherit from `AbstractModel`
 3. implement `forward(images, mask)` with the output structure expected by the chosen trainer
 4. implement `predict(images, mask)` for evaluation and testing
@@ -136,7 +86,7 @@ Typical file route:
 6. add enum support in `enums.py` if it should be a first-class built-in choice
 7. make sure the chosen trainer understands the model output structure
 
-The `predict(...)` method is the inference entrypoint used by [mimose test](../src/mimose/testing/pipeline.py). It should take a full input volume and a modality mask, run the model in test-time mode, and return segmentation logits or probabilities with shape `[B, C, H, W, D]`. In other words, `forward(...)` is the training contract, while `predict(...)` is the evaluation contract.
+The `predict(...)` method is the inference entrypoint used by [missingbench test](../src/missingbench/testing/pipeline.py). It should take a full input volume and a modality mask, run the model in test-time mode, and return segmentation logits or probabilities with shape `[B, C, H, W, D]`. In other words, `forward(...)` is the training contract, while `predict(...)` is the evaluation contract.
 
 Detailed guide: [docs/components/models.md](components/models.md)
 
@@ -144,10 +94,10 @@ Detailed guide: [docs/components/models.md](components/models.md)
 
 The loss layer lives in:
 
-- [src/mimose/losses/config.py](../src/mimose/losses/config.py)
-- [src/mimose/losses/imfuse.py](../src/mimose/losses/imfuse.py)
-- [src/mimose/losses/dcseg.py](../src/mimose/losses/dcseg.py)
-- [src/mimose/losses/__init__.py](../src/mimose/losses/__init__.py)
+- [src/missingbench/losses/config.py](../src/missingbench/losses/config.py)
+- [src/missingbench/losses/imfuse.py](../src/missingbench/losses/imfuse.py)
+- [src/missingbench/losses/dcseg.py](../src/missingbench/losses/dcseg.py)
+- [src/missingbench/losses/__init__.py](../src/missingbench/losses/__init__.py)
 
 This is where you extend:
 
@@ -157,7 +107,7 @@ This is where you extend:
 
 Typical file route:
 
-1. implement the loss module under `src/mimose/losses/`
+1. implement the loss module under `src/missingbench/losses/`
 2. wire it through `losses/config.py`
 3. add enum support in `enums.py` if needed
 4. make sure the trainer passes the right tensors to it
@@ -168,10 +118,10 @@ The trainer/loss contract matters more than the loss file alone. If the model ou
 
 The dataset layer lives in:
 
-- [src/mimose/datasets/base.py](../src/mimose/datasets/base.py)
-- [src/mimose/datasets/imfuse.py](../src/mimose/datasets/imfuse.py)
-- [src/mimose/datasets/config.py](../src/mimose/datasets/config.py)
-- [src/mimose/data/splits/split.json](../src/mimose/data/splits/split.json)
+- [src/missingbench/datasets/base.py](../src/missingbench/datasets/base.py)
+- [src/missingbench/datasets/imfuse.py](../src/missingbench/datasets/imfuse.py)
+- [src/missingbench/datasets/config.py](../src/missingbench/datasets/config.py)
+- [src/missingbench/data/splits/split.json](../src/missingbench/data/splits/split.json)
 
 This is where you extend:
 
@@ -185,7 +135,7 @@ Typical file route:
 1. add enum support in `enums.py`
 2. update dataset config or dataset classes
 3. update preprocessing and testing pipeline assumptions if the sample format changes
-4. add or update split files under `src/mimose/data/splits/`
+4. add or update split files under `src/missingbench/data/splits/`
 
 Detailed guide: [docs/components/datasets.md](components/datasets.md)
 
@@ -193,8 +143,8 @@ Detailed guide: [docs/components/datasets.md](components/datasets.md)
 
 The shared runtime configuration lives in:
 
-- [src/mimose/training/config.py](../src/mimose/training/config.py)
-- [src/mimose/enums.py](../src/mimose/enums.py)
+- [src/missingbench/training/config.py](../src/missingbench/training/config.py)
+- [src/missingbench/enums.py](../src/missingbench/enums.py)
 
 This is where you extend:
 
@@ -216,13 +166,13 @@ Detailed guide: [docs/components/runtime-config.md](components/runtime-config.md
 
 The trainer stack lives in:
 
-- [src/mimose/training/trainers/abstract_trainer.py](../src/mimose/training/trainers/abstract_trainer.py)
-- [src/mimose/training/trainers/base_trainer.py](../src/mimose/training/trainers/base_trainer.py)
-- [src/mimose/training/trainers/imfuse.py](../src/mimose/training/trainers/imfuse.py)
-- [src/mimose/training/trainers/dcseg.py](../src/mimose/training/trainers/dcseg.py)
-- [src/mimose/training/transforms/base_transforms.py](../src/mimose/training/transforms/base_transforms.py)
-- [src/mimose/training/transforms/imfuse.py](../src/mimose/training/transforms/imfuse.py)
-- [src/mimose/training/transforms/__init__.py](../src/mimose/training/transforms/__init__.py)
+- [src/missingbench/training/trainers/abstract_trainer.py](../src/missingbench/training/trainers/abstract_trainer.py)
+- [src/missingbench/training/trainers/base_trainer.py](../src/missingbench/training/trainers/base_trainer.py)
+- [src/missingbench/training/trainers/imfuse.py](../src/missingbench/training/trainers/imfuse.py)
+- [src/missingbench/training/trainers/dcseg.py](../src/missingbench/training/trainers/dcseg.py)
+- [src/missingbench/training/transforms/base_transforms.py](../src/missingbench/training/transforms/base_transforms.py)
+- [src/missingbench/training/transforms/imfuse.py](../src/missingbench/training/transforms/imfuse.py)
+- [src/missingbench/training/transforms/__init__.py](../src/missingbench/training/transforms/__init__.py)
 
 This is where you extend:
 
@@ -244,9 +194,9 @@ Detailed guide: [docs/components/trainers.md](components/trainers.md)
 
 The evaluation path lives in:
 
-- [src/mimose/testing/pipeline.py](../src/mimose/testing/pipeline.py)
-- [src/mimose/models/abstract_model.py](../src/mimose/models/abstract_model.py)
-- [src/mimose/cli.py](../src/mimose/cli.py)
+- [src/missingbench/testing/pipeline.py](../src/missingbench/testing/pipeline.py)
+- [src/missingbench/models/abstract_model.py](../src/missingbench/models/abstract_model.py)
+- [src/missingbench/cli.py](../src/missingbench/cli.py)
 
 This is where you extend:
 
@@ -254,7 +204,7 @@ This is where you extend:
 - result formatting
 - model-specific inference integration
 
-The critical contract is that test-time models must support `predict(images, mask)`. If a model only works through `forward(...)`, `mimose test` will not be enough on its own.
+The critical contract is that test-time models must support `predict(images, mask)`. If a model only works through `forward(...)`, `missingbench test` will not be enough on its own.
 
 Checkpoint format is also part of the contract now:
 
@@ -269,10 +219,10 @@ Detailed guide: [docs/components/testing.md](components/testing.md)
 
 The user-facing entrypoints live in:
 
-- [src/mimose/cli.py](../src/mimose/cli.py)
-- [src/mimose/gui.py](../src/mimose/gui.py)
-- [src/mimose/utils/cli_overrides.py](../src/mimose/utils/cli_overrides.py)
-- [src/mimose/utils/cli_utils.py](../src/mimose/utils/cli_utils.py)
+- [src/missingbench/cli.py](../src/missingbench/cli.py)
+- [src/missingbench/gui.py](../src/missingbench/gui.py)
+- [src/missingbench/utils/cli_overrides.py](../src/missingbench/utils/cli_overrides.py)
+- [src/missingbench/utils/cli_utils.py](../src/missingbench/utils/cli_utils.py)
 
 This is where you extend:
 
@@ -294,8 +244,8 @@ Detailed guide: [docs/components/cli-gui.md](components/cli-gui.md)
 
 The packaged reference configs live in:
 
-- [src/mimose/data/config_templates/](../src/mimose/data/config_templates)
-- [src/mimose/data/configs/](../src/mimose/data/configs)
+- [src/missingbench/data/config_templates/](../src/missingbench/data/config_templates) (shipped templates)
+- `src/missingbench/data/configs/` (local copies written by `missingbench setup`)
 
 When you add a new built-in model, trainer, loss, or workflow option, update the shipped configs too. Otherwise the code may be technically wired but still hard to discover or use correctly.
 

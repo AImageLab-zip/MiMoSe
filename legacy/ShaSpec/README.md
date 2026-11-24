@@ -5,9 +5,6 @@
 <p align="center">
   <img src="fig/image.png">
 </p>
-✅ Tested at commit: 
-8359e49
-
 ## Requirements
 Code was tested using:
 ```
@@ -75,7 +72,7 @@ python eval.py \
   --num_classes 3 \
   --data_list BraTS23/BraTS23_test.csv \
   --weight_std \
-  --restore_from /work/grana_neuro/missing_modalities/ShaSpec/snapshots/BraTS23_ShaSpec_training/final.pth \
+  --restore_from /path/to/missing_modalities/ShaSpec/snapshots/BraTS23_ShaSpec_training/final.pth \
   --mode <MODE>
 ```
 where `<MODE>` indicates the missing modality scenario. In the command above, replace `<MODE>` with one of the following missing‑modality configurations to evaluate every scenario:

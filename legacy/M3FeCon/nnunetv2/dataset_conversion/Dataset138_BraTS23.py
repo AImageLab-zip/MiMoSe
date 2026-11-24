@@ -30,7 +30,7 @@ def convert_folder_with_preds_back_to_BraTS_labeling_convention(input_folder: st
 
 
 if __name__ == '__main__':
-    brats_data_dir = '/work/grana_neuro/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'
+    brats_data_dir = '/path/to/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'
 
     task_id = 138
     task_name = "BraTS2023"

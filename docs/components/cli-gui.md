@@ -4,9 +4,9 @@ This document explains how to extend the command-line and GUI surface.
 
 Relevant files:
 
-- `src/mimose/cli.py`
-- `src/mimose/gui.py`
-- `src/mimose/utils/cli_overrides.py`
+- `src/missingbench/cli.py`
+- `src/missingbench/gui.py`
+- `src/missingbench/utils/cli_overrides.py`
 
 ## Mental Model
 
@@ -66,7 +66,7 @@ If you change startup behavior:
 
 Before calling a CLI/GUI extension done, verify:
 
-- the option appears in `mimose --help` or the relevant subcommand help
+- the option appears in `missingbench --help` or the relevant subcommand help
 - YAML override behavior still works if applicable
 - defaults are correct
 - error messages are CLI-friendly

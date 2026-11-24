@@ -1,9 +1,6 @@
 # IM-Fuse: A Mamba-based Fusion Block for Brain Tumor Segmentation with Incomplete Modalities
-[[Our Paper]]() MICCAI 2025
+MICCAI 2025
 
-![IMFuse overview](/figs/IM-Fuse-overview.png)
-✅ Tested at commit: 
-8359e49
 ## Requirements
 Code was tested using:
 ```
@@ -13,8 +10,7 @@ torch==2.7.1
 ## How to run
 Clone this repository, create a python env for the project and activate it. Then install all the dependencies with pip.
 ```
-git clone git@github.com:AImageLab-zip/IM-Fuse.git
-cd IMFuse
+cd legacy/IMFuse
 python -m venv imfuse_venv
 source imfuse_venv/bin/activate
 pip install -r requirements.txt

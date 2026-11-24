@@ -196,7 +196,7 @@ class nnUNetTrainer(object):
 
         self.was_initialized = False
 
-        self.csv_path = "/work/grana_neuro/missing_modalities/mmFormer/BRATS2023_Training_npy/datalist/val15splits.csv"
+        self.csv_path = "/path/to/missing_modalities/mmFormer/BRATS2023_Training_npy/datalist/val15splits.csv"
 
         # Build a dictionary from case -> [bool, bool, bool, bool] for the test cases
         self.maskdict = {}

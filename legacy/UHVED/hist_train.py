@@ -47,8 +47,8 @@ if __name__ == '__main__':
     """
     Histogram training 
     """
-    BRATS_path = '/work/grana_neuro/missing_modalities/UHVED/extensions/u_hved/datalist/train.txt'
-    data_path = '/work/grana_neuro/missing_modalities/UHVED/data/BRATS2023'
+    BRATS_path = '/path/to/missing_modalities/UHVED/extensions/u_hved/datalist/train.txt'
+    data_path = '/path/to/missing_modalities/UHVED/data/BRATS2023'
     debug = False
     if not os.path.exists(data_path):
         raise ValueError(

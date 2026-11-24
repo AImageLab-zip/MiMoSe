@@ -1,10 +1,10 @@
 # YAML Config Guide
 
-This document explains how to write a YAML config for MiMoSe.
+This document explains how to write a YAML config for MissingBench.
 
 If you are extending the codebase itself rather than just writing configs, the detailed component extension guides live under [docs/components/README.md](components/README.md).
 
-MiMoSe uses a flat YAML style. One file can contain fields for:
+MissingBench uses a flat YAML style. One file can contain fields for:
 
 - preprocessing
 - training
@@ -17,7 +17,7 @@ Each command reads only the keys it needs and ignores the rest. One YAML file ca
 - CLI values override YAML values when both are provided.
 - Most fields are top-level keys.
 - `custom_model_kwargs`, `custom_loss_kwargs`, and `custom_trainer_kwargs` are nested dictionaries.
-- Shipped examples live in `src/mimose/data/configs/`.
+- Shipped templates live in `src/missingbench/data/config_templates/`; `missingbench setup` writes path-patched copies to `src/missingbench/data/configs/`.
 
 The easiest workflow is:
 
@@ -73,17 +73,18 @@ The easiest workflow is:
   - `srmnet`
   - `ims2trans`
   - `mstkdnet`
-  - `adamm`
-  - `napscaf`
-  - `mifpn`
   - `rfl`
   - `lckd`
+  - `mambavitakd`
+  - `matunet`
 - `model`: string enum
   - `imfuse`
   - `mmformer`
   - `dcseg`
   - `rfnet`
-  - `tinymimosa`
+  - `a2fseg`
+  - `plainunet`
+  - `matunet`
   - `uhved`
   - `robustseg`
   - `m2ftrans`
@@ -95,17 +96,14 @@ The easiest workflow is:
   - `mmmvit`
   - `ims2trans`
   - `mstkdnet`
-  - `adamm`
-  - `napscaf`
-  - `mifpn`
   - `rfl`
   - `unetmfi`
   - `lckd`
   - `inoutfusion`
-- `loss`: built-in string choice
+  - `mambavitakd`
+- `loss`: built-in string choice (resolved by loss class name in `src/missingbench/losses/`)
   - `imfuse`
-  - `dcseg`
-  - `tinymimosa`
+  - `dicece`
   - `uhved`
   - `robustseg`
   - `shaspec`
@@ -114,12 +112,10 @@ The easiest workflow is:
   - `srmnet`
   - `ims2trans`
   - `mstkdnet`
-  - `adamm`
-  - `napscaf`
-  - `mifpn`
   - `rfl`
   - `lckd`
   - `inoutfusion`
+  - `mambavitakd`
 - `optimizer`: string enum
   - `radam`
   - `adamw`
@@ -129,6 +125,7 @@ The easiest workflow is:
 - `momentum`: float
 - `scheduler`: string enum
   - `poly`
+  - `warmuppoly`
   - `cosine`
   - `step`
   - `multistep`
@@ -151,7 +148,14 @@ The easiest workflow is:
 - `batch_size`: integer
 - `num_epochs`: integer
 - `num_workers`: integer
-- `fp16`: boolean
+- `precision`: string enum
+  - `fp32`
+  - `fp16`
+  - `bf16`
+- `compile`: boolean
+- `validation_every`: integer
+- `results_dir`: path
+- `fold`: integer
 - `resume`: boolean
 - `pretrain`: path or `null`
 - `seed`: integer or `null`
@@ -161,6 +165,9 @@ The easiest workflow is:
   - `offline`
   - `disabled`
 - `wandb_run_name`: string or `null`
+- `wandb_entity`: string or `null`
+- `push_to_hf`: boolean
+- `hf_repo`: string or `null`
 - `dataset_type`: string enum
   - `brats18`
   - `brats23`
@@ -168,7 +175,7 @@ The easiest workflow is:
 - `split_file`: path or `null`
 - `transform_kind`: string enum or `null`
   - `imfuse`
-  - `tinymimosa`
+  - `shaspec`
 
 ### Testing
 
@@ -180,7 +187,9 @@ The easiest workflow is:
   - `mmformer`
   - `dcseg`
   - `rfnet`
-  - `tinymimosa`
+  - `a2fseg`
+  - `plainunet`
+  - `matunet`
   - `uhved`
   - `robustseg`
   - `m2ftrans`
@@ -192,13 +201,11 @@ The easiest workflow is:
   - `mmmvit`
   - `ims2trans`
   - `mstkdnet`
-  - `adamm`
-  - `napscaf`
-  - `mifpn`
   - `rfl`
   - `unetmfi`
   - `lckd`
   - `inoutfusion`
+  - `mambavitakd`
 - `dataset_type`: string enum
   - `brats18`
   - `brats23`
@@ -220,8 +227,8 @@ The easiest workflow is:
 Path-like values are written as strings:
 
 ```yaml
-data_dir: /work/user/preprocessed
-checkpoint_path: /work/user/run/checkpoints/final_weights_only.safetensors
+data_dir: /path/to/preprocessed
+checkpoint_path: /path/to/run/checkpoints/final_weights_only.safetensors
 ```
 
 ### Enums
@@ -232,7 +239,7 @@ Enum-like values are written as lowercase strings:
 trainer: dcseg
 optimizer: adam
 dataset_type: brats23
-transform_kind: tinymimosa
+transform_kind: imfuse
 wandb_mode: offline
 ```
 
@@ -241,7 +248,7 @@ wandb_mode: offline
 Use YAML booleans:
 
 ```yaml
-fp16: false
+compile: false
 resume: true
 yes: false
 ```
@@ -299,14 +306,14 @@ data_dir: /path/to/preprocessed
 art_dir: /path/to/run
 trainer: dcseg
 model: dcseg
-loss: dcseg
+loss: imfuse
 
 custom_model_kwargs:
   num_cls: 4
   fusion_type: RFM
 
 custom_trainer_kwargs:
-  patch_size: 112
+  patch_size: 80
   transform_kind: imfuse
   train_masking_mode: random
   val_masking_mode: validation
@@ -327,12 +334,12 @@ weight_decay: 0.0001
 batch_size: 1
 num_epochs: 500
 num_workers: 8
-fp16: false
+precision: fp32
 resume: false
 pretrain: null
 seed: 999
 
-wandb_project: SegmentationMM
+wandb_project: MissingBench
 wandb_mode: online
 wandb_run_name: dcseg23_training
 dataset_type: brats23
@@ -389,7 +396,7 @@ Type: dictionary with trainer-specific keys.
 
 ```yaml
 custom_trainer_kwargs:
-  patch_size: 112
+  patch_size: 80
   transform_kind: imfuse
   train_masking_mode: random
   val_masking_mode: validation
@@ -404,7 +411,7 @@ Common trainer-specific keys and types:
 - `transform_kind`: string enum
 - `transform_kind` values:
   - `imfuse`
-  - `tinymimosa`
+  - `shaspec`
 - `train_masking_mode`: string enum
   - `random`
   - `validation`
@@ -421,10 +428,7 @@ Common trainer-specific keys and types:
 - `anatomy_contrastive_method`: string
   - `cos_sim`
   - `ssim`
-- `slices_per_patch`: integer (`napscaf`: axial slices drawn from each 3D patch per step)
-- `slice_sampling`: string enum (`napscaf`)
-  - `tumor`
-  - `random`
+- `budgets_per_step`, `budget_sampling`, `local_window_ratio`, `lambda_param`, `tau_start`, `tau_end`, `gate_lr_scale`, `inplace_distill`, `distill_alpha`, `student_modality_drop`: MatUNet (`trainer: matunet`) multi-budget options; see `matunet_23.yaml` for the documented defaults
 
 ## Nulls and Lists
 
@@ -443,9 +447,9 @@ Use YAML lists for sequences:
 
 It is normal for one config to include preprocess, train, and test fields together.
 
-- `mimose preprocess --config ...` reads preprocess keys
-- `mimose train --config ...` reads train keys
-- `mimose test --config ...` reads test keys
+- `missingbench preprocess --config ...` reads preprocess keys
+- `missingbench train --config ...` reads train keys
+- `missingbench test --config ...` reads test keys
 
 You do not need separate files unless that is easier for your workflow.
 
@@ -453,50 +457,50 @@ You do not need separate files unless that is easier for your workflow.
 
 Recommended examples:
 
-- `src/mimose/data/configs/imfuse_18.yaml`
-- `src/mimose/data/configs/imfuse_23.yaml`
-- `src/mimose/data/configs/mmformer_18.yaml`
-- `src/mimose/data/configs/mmformer_23.yaml`
-- `src/mimose/data/configs/dcseg_18.yaml`
-- `src/mimose/data/configs/dcseg_23.yaml`
-- `src/mimose/data/configs/rfnet_18.yaml`
-- `src/mimose/data/configs/rfnet_23.yaml`
-- `src/mimose/data/configs/uhved_18.yaml`
-- `src/mimose/data/configs/uhved_23.yaml`
-- `src/mimose/data/configs/robustseg_18.yaml`
-- `src/mimose/data/configs/robustseg_23.yaml`
-- `src/mimose/data/configs/m2ftrans_18.yaml`
-- `src/mimose/data/configs/m2ftrans_23.yaml`
-- `src/mimose/data/configs/sfusion_18.yaml`
-- `src/mimose/data/configs/sfusion_23.yaml`
-- `src/mimose/data/configs/shaspec_18.yaml`
-- `src/mimose/data/configs/shaspec_23.yaml`
-- `src/mimose/data/configs/m3ae_18.yaml`
-- `src/mimose/data/configs/m3ae_23.yaml`
-- `src/mimose/data/configs/m3fecon_18.yaml`
-- `src/mimose/data/configs/m3fecon_23.yaml`
-- `src/mimose/data/configs/srmnet_18.yaml`
-- `src/mimose/data/configs/srmnet_23.yaml`
-- `src/mimose/data/configs/mmmvit_18.yaml`
-- `src/mimose/data/configs/mmmvit_23.yaml`
-- `src/mimose/data/configs/ims2trans_18.yaml`
-- `src/mimose/data/configs/ims2trans_23.yaml`
-- `src/mimose/data/configs/mstkdnet_18.yaml`
-- `src/mimose/data/configs/mstkdnet_23.yaml`
-- `src/mimose/data/configs/adamm_18.yaml`
-- `src/mimose/data/configs/adamm_23.yaml`
-- `src/mimose/data/configs/napscaf_18.yaml`
-- `src/mimose/data/configs/napscaf_23.yaml`
-- `src/mimose/data/configs/mifpn_18.yaml`
-- `src/mimose/data/configs/mifpn_23.yaml`
-- `src/mimose/data/configs/rfl_18.yaml`
-- `src/mimose/data/configs/rfl_23.yaml`
-- `src/mimose/data/configs/unetmfi_18.yaml`
-- `src/mimose/data/configs/unetmfi_23.yaml`
-- `src/mimose/data/configs/lckd_18.yaml`
-- `src/mimose/data/configs/lckd_23.yaml`
-- `src/mimose/data/configs/inoutfusion_18.yaml`
-- `src/mimose/data/configs/inoutfusion_23.yaml`
+- `src/missingbench/data/configs/imfuse_18.yaml`
+- `src/missingbench/data/configs/imfuse_23.yaml`
+- `src/missingbench/data/configs/mmformer_18.yaml`
+- `src/missingbench/data/configs/mmformer_23.yaml`
+- `src/missingbench/data/configs/dcseg_18.yaml`
+- `src/missingbench/data/configs/dcseg_23.yaml`
+- `src/missingbench/data/configs/rfnet_18.yaml`
+- `src/missingbench/data/configs/rfnet_23.yaml`
+- `src/missingbench/data/configs/uhved_18.yaml`
+- `src/missingbench/data/configs/uhved_23.yaml`
+- `src/missingbench/data/configs/robustseg_18.yaml`
+- `src/missingbench/data/configs/robustseg_23.yaml`
+- `src/missingbench/data/configs/m2ftrans_18.yaml`
+- `src/missingbench/data/configs/m2ftrans_23.yaml`
+- `src/missingbench/data/configs/sfusion_18.yaml`
+- `src/missingbench/data/configs/sfusion_23.yaml`
+- `src/missingbench/data/configs/shaspec_18.yaml`
+- `src/missingbench/data/configs/shaspec_23.yaml`
+- `src/missingbench/data/configs/m3ae_18.yaml`
+- `src/missingbench/data/configs/m3ae_23.yaml`
+- `src/missingbench/data/configs/m3fecon_18.yaml`
+- `src/missingbench/data/configs/m3fecon_23.yaml`
+- `src/missingbench/data/configs/srmnet_18.yaml`
+- `src/missingbench/data/configs/srmnet_23.yaml`
+- `src/missingbench/data/configs/mmmvit_18.yaml`
+- `src/missingbench/data/configs/mmmvit_23.yaml`
+- `src/missingbench/data/configs/ims2trans_18.yaml`
+- `src/missingbench/data/configs/ims2trans_23.yaml`
+- `src/missingbench/data/configs/mstkdnet_18.yaml`
+- `src/missingbench/data/configs/mstkdnet_23.yaml`
+- `src/missingbench/data/configs/rfl_18.yaml`
+- `src/missingbench/data/configs/rfl_23.yaml`
+- `src/missingbench/data/configs/unetmfi_18.yaml`
+- `src/missingbench/data/configs/unetmfi_23.yaml`
+- `src/missingbench/data/configs/lckd_18.yaml`
+- `src/missingbench/data/configs/inoutfusion_18.yaml`
+- `src/missingbench/data/configs/inoutfusion_23.yaml`
+- `src/missingbench/data/configs/a2fseg_23.yaml`
+- `src/missingbench/data/configs/lckd_23.yaml`
+- `src/missingbench/data/configs/mambavitakd_23.yaml`
+- `src/missingbench/data/configs/plainunet_b01_23.yaml` ... `plainunet_b16_23.yaml`
+- `src/missingbench/data/configs/matunet_23.yaml`
+
+Every baseline also ships a `_25.yaml` (BraTS 2025) variant. Plain U-Net and MatUNet ship BraTS 2023 configs only.
 
 ## Related Docs
 

@@ -1,6 +1,6 @@
 # Training
 
-`mimose train` launches config-driven training for the active MiMoSe package.
+`missingbench train` launches config-driven training for the active MissingBench package.
 
 The active training stack currently includes:
 
@@ -8,7 +8,8 @@ The active training stack currently includes:
   - `imfuse`
   - `mmformer`
   - `rfnet`
-  - `tinymimosa`
+  - `a2fseg`
+  - `plainunet` (Plain U-Net, with `loss: dicece`)
   - `m2ftrans`
   - `mmmvit`
   - `unetmfi`
@@ -32,12 +33,14 @@ The active training stack currently includes:
   - `ims2trans`
 - `MSTKDTrainer` for:
   - `mstkdnet`
-- `MIFPNTrainer` for:
-  - `mifpn`
 - `RFLTrainer` for:
   - `rfl`
 - `LCKDTrainer` for:
   - `lckd`
+- `MambaVitAKDTrainer` for:
+  - `mambavitakd`
+- `MatUnetTrainer` for:
+  - `matunet` (MatUNet, budget-conditioned supernet, with `loss: dicece`)
 
 The runtime still shares common checkpointing, DDP, WandB, and Rich progress infrastructure across trainers, but the DC-Seg path now has its own trainer and transform wiring.
 
@@ -51,18 +54,18 @@ Training produces two checkpoint classes:
 Run from YAML:
 
 ```bash
-mimose train --config imfuse_23.yaml
+missingbench train --config imfuse_23.yaml
 ```
-The CLI automatically resolves and autocompletes config files found in src/mimose/data/config. Absolute or relative paths for custom yaml files are supported too.
+The CLI automatically resolves and autocompletes config files found in `src/missingbench/data/configs/` (written by `missingbench setup`). Absolute or relative paths for custom yaml files are supported too.
 Run from CLI:
 
 ```bash
-mimose train \
+missingbench train \
   --data-dir /path/to/preprocessed \
   --art-dir /path/to/artifacts_dir \
   --trainer dcseg \
   --model dcseg \
-  --loss dcseg \
+  --loss imfuse \
   --optimizer adam \
   --scheduler poly \
   --lr 2e-4 \
@@ -72,7 +75,7 @@ mimose train \
 
 CLI values override YAML values when both are provided.
 
-For the overall MiMoSe YAML format, see [docs/yaml-config.md](yaml-config.md).
+For the overall MissingBench YAML format, see [docs/yaml-config.md](yaml-config.md).
 For very detailed extension notes on trainers, models, and runtime wiring, see [docs/components/README.md](components/README.md).
 
 
@@ -80,46 +83,52 @@ For very detailed extension notes on trainers, models, and runtime wiring, see [
 
 The repo currently ships these reference training configs:
 
-- `src/mimose/data/configs/imfuse_18.yaml`
-- `src/mimose/data/configs/imfuse_23.yaml`
-- `src/mimose/data/configs/mmformer_18.yaml`
-- `src/mimose/data/configs/mmformer_23.yaml`
-- `src/mimose/data/configs/dcseg_18.yaml`
-- `src/mimose/data/configs/dcseg_23.yaml`
-- `src/mimose/data/configs/rfnet_18.yaml`
-- `src/mimose/data/configs/rfnet_23.yaml`
-- `src/mimose/data/configs/uhved_18.yaml`
-- `src/mimose/data/configs/uhved_23.yaml`
-- `src/mimose/data/configs/robustseg_18.yaml`
-- `src/mimose/data/configs/robustseg_23.yaml`
-- `src/mimose/data/configs/m2ftrans_18.yaml`
-- `src/mimose/data/configs/m2ftrans_23.yaml`
-- `src/mimose/data/configs/sfusion_18.yaml`
-- `src/mimose/data/configs/sfusion_23.yaml`
-- `src/mimose/data/configs/shaspec_18.yaml`
-- `src/mimose/data/configs/shaspec_23.yaml`
-- `src/mimose/data/configs/m3ae_18.yaml`
-- `src/mimose/data/configs/m3ae_23.yaml`
-- `src/mimose/data/configs/m3fecon_18.yaml`
-- `src/mimose/data/configs/m3fecon_23.yaml`
-- `src/mimose/data/configs/srmnet_18.yaml`
-- `src/mimose/data/configs/srmnet_23.yaml`
-- `src/mimose/data/configs/mmmvit_18.yaml`
-- `src/mimose/data/configs/mmmvit_23.yaml`
-- `src/mimose/data/configs/ims2trans_18.yaml`
-- `src/mimose/data/configs/ims2trans_23.yaml`
-- `src/mimose/data/configs/mstkdnet_18.yaml`
-- `src/mimose/data/configs/mstkdnet_23.yaml`
-- `src/mimose/data/configs/mifpn_18.yaml`
-- `src/mimose/data/configs/mifpn_23.yaml`
-- `src/mimose/data/configs/rfl_18.yaml`
-- `src/mimose/data/configs/rfl_23.yaml`
-- `src/mimose/data/configs/unetmfi_18.yaml`
-- `src/mimose/data/configs/unetmfi_23.yaml`
-- `src/mimose/data/configs/lckd_18.yaml`
-- `src/mimose/data/configs/lckd_23.yaml`
-- `src/mimose/data/configs/inoutfusion_18.yaml`
-- `src/mimose/data/configs/inoutfusion_23.yaml`
+- `src/missingbench/data/configs/imfuse_18.yaml`
+- `src/missingbench/data/configs/imfuse_23.yaml`
+- `src/missingbench/data/configs/mmformer_18.yaml`
+- `src/missingbench/data/configs/mmformer_23.yaml`
+- `src/missingbench/data/configs/dcseg_18.yaml`
+- `src/missingbench/data/configs/dcseg_23.yaml`
+- `src/missingbench/data/configs/rfnet_18.yaml`
+- `src/missingbench/data/configs/rfnet_23.yaml`
+- `src/missingbench/data/configs/uhved_18.yaml`
+- `src/missingbench/data/configs/uhved_23.yaml`
+- `src/missingbench/data/configs/robustseg_18.yaml`
+- `src/missingbench/data/configs/robustseg_23.yaml`
+- `src/missingbench/data/configs/m2ftrans_18.yaml`
+- `src/missingbench/data/configs/m2ftrans_23.yaml`
+- `src/missingbench/data/configs/sfusion_18.yaml`
+- `src/missingbench/data/configs/sfusion_23.yaml`
+- `src/missingbench/data/configs/shaspec_18.yaml`
+- `src/missingbench/data/configs/shaspec_23.yaml`
+- `src/missingbench/data/configs/m3ae_18.yaml`
+- `src/missingbench/data/configs/m3ae_23.yaml`
+- `src/missingbench/data/configs/m3fecon_18.yaml`
+- `src/missingbench/data/configs/m3fecon_23.yaml`
+- `src/missingbench/data/configs/srmnet_18.yaml`
+- `src/missingbench/data/configs/srmnet_23.yaml`
+- `src/missingbench/data/configs/mmmvit_18.yaml`
+- `src/missingbench/data/configs/mmmvit_23.yaml`
+- `src/missingbench/data/configs/ims2trans_18.yaml`
+- `src/missingbench/data/configs/ims2trans_23.yaml`
+- `src/missingbench/data/configs/mstkdnet_18.yaml`
+- `src/missingbench/data/configs/mstkdnet_23.yaml`
+- `src/missingbench/data/configs/rfl_18.yaml`
+- `src/missingbench/data/configs/rfl_23.yaml`
+- `src/missingbench/data/configs/unetmfi_18.yaml`
+- `src/missingbench/data/configs/unetmfi_23.yaml`
+- `src/missingbench/data/configs/lckd_18.yaml`
+- `src/missingbench/data/configs/lckd_23.yaml`
+- `src/missingbench/data/configs/inoutfusion_18.yaml`
+- `src/missingbench/data/configs/inoutfusion_23.yaml`
+- `src/missingbench/data/configs/a2fseg_18.yaml`
+- `src/missingbench/data/configs/a2fseg_23.yaml`
+- `src/missingbench/data/configs/mambavitakd_18.yaml`
+- `src/missingbench/data/configs/mambavitakd_23.yaml`
+- `src/missingbench/data/configs/plainunet_b01_23.yaml` ... `plainunet_b16_23.yaml` (Plain U-Net, 16 sizes from 1.9M to 255.6M parameters)
+- `src/missingbench/data/configs/matunet_23.yaml` (MatUNet)
+
+Every baseline also has a `_25.yaml` (BraTS 2025) variant. The templates live in `src/missingbench/data/config_templates/`; `missingbench setup` writes the path-patched copies listed above.
 
 They are combined reference files that include preprocess, train, and test sections/fields. The train command reads the training-relevant keys and ignores the rest.
 
@@ -139,7 +148,9 @@ Top-level training fields:
 - `batch_size`
 - `num_epochs`
 - `num_workers`
-- `fp16`
+- `precision` (`fp32`, `fp16`, `bf16`)
+- `compile`
+- `validation_every`
 - `resume`
 - `pretrain`
 - `seed`
@@ -168,9 +179,10 @@ Trainer values:
 - `srmnet`
 - `ims2trans`
 - `mstkdnet`
-- `mifpn`
 - `rfl`
 - `lckd`
+- `mambavitakd`
+- `matunet`
 
 Model values:
 
@@ -178,7 +190,9 @@ Model values:
 - `mmformer`
 - `dcseg`
 - `rfnet`
-- `tinymimosa`
+- `a2fseg`
+- `plainunet`
+- `matunet`
 - `uhved`
 - `robustseg`
 - `m2ftrans`
@@ -190,17 +204,16 @@ Model values:
 - `mmmvit`
 - `ims2trans`
 - `mstkdnet`
-- `mifpn`
 - `rfl`
 - `unetmfi`
 - `lckd`
 - `inoutfusion`
+- `mambavitakd`
 
 Loss values:
 
 - `imfuse`
-- `dcseg`
-- `tinymimosa`
+- `dicece`
 - `uhved`
 - `robustseg`
 - `shaspec`
@@ -209,10 +222,10 @@ Loss values:
 - `srmnet`
 - `ims2trans`
 - `mstkdnet`
-- `mifpn`
 - `rfl`
 - `lckd`
 - `inoutfusion`
+- `mambavitakd`
 
 Optimizer values:
 
@@ -224,6 +237,7 @@ Optimizer values:
 Scheduler values:
 
 - `poly`
+- `warmuppoly`
 - `cosine`
 - `step`
 - `multistep`
@@ -232,7 +246,7 @@ Scheduler values:
 Transform manager values:
 
 - `imfuse`
-- `tinymimosa`
+- `shaspec`
 
 Dataset type values:
 
@@ -245,6 +259,7 @@ Masking mode values:
 - `random`
 - `validation`
 - `test`
+- `full`
 
 `plateau_mode` values when `scheduler: plateau`:
 
@@ -274,7 +289,7 @@ Common examples:
 
 Selectable values for the constrained trainer kwargs:
 
-- `transform_kind`: `imfuse`, `tinymimosa`
+- `transform_kind`: `imfuse`, `shaspec`
 - `train_masking_mode`: `random`, `validation`, `test`
 - `val_masking_mode`: `random`, `validation`, `test`
 
@@ -304,11 +319,11 @@ Current defaults in the shipped DC-Seg configs include:
 
 - `trainer: dcseg`
 - `model: dcseg`
-- `loss: dcseg`
+- `loss: imfuse` (DC-Seg's auxiliary terms are added by `DCSegTrainer`)
 - `transform_kind: imfuse`
-- `patch_size: 112`
+- `patch_size: 80`
 - `poly_total_iters: 500`
-- `fp16: false`
+- `precision: fp16`
 - `use_recon_loss: true`
 - `use_reg_loss: true`
 - `use_ana_contrastive: true`
@@ -381,7 +396,7 @@ patches must be exactly 80<sup>3</sup> — there's no shortcut for other sizes,
 only tiling with 50% overlap like the other sliding-window models. M2FTrans
 uses `transform_kind: imfuse`, `patch_size: 80`, `region_fusion_start_epoch: 0`,
 and `optimizer: adamw` (closest available match to legacy `torch.optim.AdamW`;
-MiMoSe's `adamw` optimizer config does not set `amsgrad=True` the way legacy
+MissingBench's `adamw` optimizer config does not set `amsgrad=True` the way legacy
 did, a pre-existing framework limitation not specific to M2FTrans).
 
 ### SFusion-specific notes
@@ -399,7 +414,7 @@ per-modality reprojections with a softmax-weighted sum.
 
 Legacy SFusion assumed one shared missing-modality pattern per training batch
 (it built a variable-length token sequence containing only the present
-modalities). Since MiMoSe's masks are per-sample (`[B, 4]`, potentially
+modalities). Since MissingBench's masks are per-sample (`[B, 4]`, potentially
 different per row in a batch), this port instead always builds a fixed
 4-modality token sequence and excludes missing modalities per-sample via
 `src_key_padding_mask` in the transformer and via a masked softmax in the
@@ -429,14 +444,14 @@ instead) producing a modality-invariant "shared" feature, and once through a
 modality-specific encoder. Present modalities compose their shared and
 specific features via a residual "compositional layer"; missing modalities
 fall back to the shared feature of the first available modality (generalizing
-legacy's single-mask-per-batch fallback to MiMoSe's per-sample masks, the
+legacy's single-mask-per-batch fallback to MissingBench's per-sample masks, the
 same adaptation used for SFusion's fusion module).
 
 Legacy ShaSpec's ResNet stem used an anisotropic stride (only downsampling
 H/W, not depth), requiring a non-cubic `(80, 160, 160)` input and an extra
 asymmetric final upsample to compensate. This port uses an isotropic stride
 instead, so the whole encoder/decoder downsamples/upsamples by 16x uniformly
-and works with the cubic patches used everywhere else in MiMoSe — at
+and works with the cubic patches used everywhere else in MissingBench — at
 `patch_size: 80` the bottleneck ends up at the same 5<sup>3</sup> resolution
 legacy's ASPP dilation rates (2/4/8) were tuned for, so this isn't expected to
 change model capacity, just the input aspect ratio.
@@ -477,7 +492,7 @@ One piece is still not reproduced:
 - Legacy fine-tuning re-samples each training crop 2-3 times with
   *independently random* missing-modality patterns and adds an MSE
   consistency loss between their encoder features — this assumes multiple
-  forward passes per sample per step, which doesn't fit MiMoSe's
+  forward passes per sample per step, which doesn't fit MissingBench's
   one-mask-per-sample contract (the dataset decides the mask once per
   sample, matching every other trainer here). This port drops that
   consistency term; fine-tuning trains with a plain softmax cross-entropy +
@@ -503,7 +518,7 @@ before):
   legacy's two independent per-stage `CosineAnnealingLR` schedules, rather
   than one continuous decay across both stages).
 - Legacy's `limage` is full-BraTS-volume sized with location-indexed spatial
-  patch masking; MiMoSe's `limage` is fixed at the training patch size (a
+  patch masking; MissingBench's `limage` is fixed at the training patch size (a
   pre-existing port decision, see below), so there is no spatial location to
   index — the pretraining stage reuses the same per-sample, per-modality
   masking (`train_masking_mode`/`val_masking_mode`) as fine-tuning, rather
@@ -540,7 +555,7 @@ encoder output), unweighted (conceptually matching legacy, which adds
 Legacy's own `train_step`/`validation_step` picked one shared
 missing-modality pattern for the whole batch (`random.choice` over the same
 15 combinations used by DCSeg/RFNet/RobustSeg/ShaSpec); this port instead
-respects MiMoSe's per-sample `[B, 4]` masks, so the reconstruction loss is
+respects MissingBench's per-sample `[B, 4]` masks, so the reconstruction loss is
 averaged only over each sample's own missing channels. M3FeCon trains at
 `patch_size: 128` (matching legacy's `3d_fullres` plan) with
 `optimizer: sgd`, `momentum: 0.99`, `nesterov: true`, and a `poly` LR
@@ -633,7 +648,7 @@ fuse + pyramid deep-supervision segmentation losses (with the same
 default `0` i.e. no warmup).
 
 Legacy's actual backbone is a shared-weight 3D Swin Transformer encoder
-(built from `timm`/`monai` blocks — neither is a MiMoSe dependency) that is
+(built from `timm`/`monai` blocks — neither is a MissingBench dependency) that is
 specialized per modality via learnable additive "modality tokens" injected
 into every window-attention block, plus a 3D CutMix augmentation during
 training. Hand-rolling a correct 3D shifted-window-attention +
@@ -653,7 +668,7 @@ SRMNet/MMMViT: `fusion_prenorm`'s channel multiplier is really "number of
 modality streams" (always 4), not the true segmentation class count, which
 would shape-mismatch for BraTS25 (`num_cls=5`) — `FusionPrenorm` here always
 fixes it at 4. IMS2Trans trains at `patch_size: 128` with `optimizer: adam`
-(`amsgrad` behavior matched via MiMoSe's `adam`), `lr: 0.0002`,
+(`amsgrad` behavior matched via MissingBench's `adam`), `lr: 0.0002`,
 `batch_size: 1` (matching legacy's defaults) and a `poly` LR schedule.
 
 ### MST-KDNet-specific notes
@@ -705,165 +720,6 @@ distillation-term weights (`unetr_weight: 0.2`, `evd_weight: 1e8`,
 `weight_gsm: 1e11`) are copied as-is from legacy and are highly
 scale-sensitive to the bottleneck's spatial/channel dimensions.
 
-### AdaMM-specific notes
-
-AdaMM (`trainer: adamm`, `model: adamm`, `loss: adamm`) is built on legacy
-MST-KDNet's code (both by the same authors, both "Modified from ACN") and
-keeps its teacher/student contract: a "full" teacher branch always sees the
-true 4-channel volume, a "missing" student branch sees the volume
-zero-filled per the modality mask, and **only the student is evaluated**.
-The backbone is the plain Myronenko 3D U-Net (no UNETR bottleneck). On top
-of it the student adds:
-- an **Adapter Bank**: residual 1x1x1 bottleneck adapters after three
-  encoder stages, the bottleneck, and three decoder stages, plus dedicated
-  bottleneck fusion convs, one set per non-full modality combination,
-  selected by the sample's mask (the full-modality key skips them);
-- **GARM** (legacy `AdaptiveGraphEnhanceModule`): soft-assigns the adapted
-  and shared bottleneck features to 8 learnable graph nodes each, mixes them
-  with a GCN and a unified cross-graph attention pass, and re-projects onto
-  the voxels (missing-modality path only);
-- **LPGM**: a lesion-presence head on the last decoder feature. During
-  training it scales each tumor class's Dice term by `|p - y| + 1` and adds
-  a BCE presence term for both branches; at inference the student's
-  tumor-class outputs are zeroed wherever the head predicts absence
-  (`lpgm_gating: true`).
-
-The loss is legacy's co-training objective: presence-weighted Dice for both
-branches (`weight_mispath: 0.6`), prediction-consistency MSE with the same
-sigmoid rampup as MST-KDNet, bottleneck content MSE (`weight_content: 0.2`),
-the 1e-4-weighted Gram style loss, both presence BCEs, and a "global style"
-term over the concatenated `[c3d, style, c4d]` feature weighted `10e1`
-(`weight_gsm: 100.0`).
-
-Port deviations:
-- **Targets.** Legacy predicts overlapping WT/TC/ET regions plus background
-  with sigmoid outputs; like the MST-KDNet port, this port trains on MiMoSe's
-  one-hot classes (Dice over all classes, argmax at evaluation). LPGM
-  therefore predicts the presence of each tumor *class* (NCR, ED, ET), and
-  gating leaves the background channel untouched.
-- **Style discriminator dropped**, for the same reasons as in the MST-KDNet
-  port (2e-4 weight, Adam optimizer rebuilt every iteration).
-- **Dead legacy code is not ported**: the teacher's adapters and GARM (the
-  teacher only ever runs the full-modality key), GARM's unused
-  `MutualModule1` and `region_conv1/2`, and the adjacency matrices its
-  attention layer receives but never reads. The adapter set for the
-  all-missing mask, which never occurs, is omitted too.
-- **Per-sample masks.** Legacy draws one mask per batch at batch size 1;
-  this port routes every sample through its own mask's adapters, so any
-  batch size works.
-- **Global style loss.** Legacy indexes the batched bottleneck feature per
-  sample and pairs sample `i` with `i - 1`; at its batch size of 1 that pairs
-  each sample with itself, which `per_sample_statistics: true` keeps for
-  larger batches.
-
-As with MST-KDNet, this port uses cubic `patch_size: 128` crops instead of
-legacy's `(160, 192, 128)` (`style_size_scale: 1.875` rescales the style
-normaliser accordingly). Training follows legacy's `configs/brats.yml`:
-`optimizer: adam`, `lr: 0.0001`, `weight_decay: 1e-5`, `batch_size: 1`,
-`num_epochs: 400`, an epoch-wise `poly` schedule (power 0.9), and
-validation every 10 epochs. The published legacy repo is incomplete
-(`models/build.py` imports `smunetr`, `AdaMMKD_old`, `AdaMMKD_wo_GARM` and
-`AdaMMKD_wo_LPGM`, and `losses.py` imports `models.evd`/`models.slkd`, none
-of which are included), but every module the AdaMM model itself uses is
-present.
-
-### NAP-SCAF-specific notes
-
-NAP-SCAF (`trainer: napscaf`, `model: napscaf`, `loss: napscaf`) is the only
-2D model in this project: legacy trains a 2D network on 256x256 axial PNG
-slices. Its four modalities each get their own small convolutional encoder,
-a channel-attention transformer fuses them at every scale, and the decoder
-calibrates each skip connection with two gates: **SWG** (similarity-weighted
-gating against a "prior" feature, after **CERA** contrast-enhancing the skip
-feature) applied before and again after each skip merge. The prior features
-come from the **NAP** path: a DenseNet121-encoder VAE reconstructs the input,
-and a small U-Net turns the reconstruction into multi-scale features.
-
-The port keeps the 2D network unchanged (58.3M parameters, matching the
-paper) and adapts only how it meets MiMoSe's 3D pipeline:
-- **Training on slices.** Each training step takes the usual 3D patch
-  (`patch_size: 128`) and draws `slices_per_patch: 16` axial slices from it,
-  trained as one batch of 2D images sharing the patch's modality mask
-  (`trainer: napscaf`). By default (`slice_sampling: tumor`) tumor-containing
-  slices are taken first, mirroring legacy's preprocessing, which keeps only
-  tumor slices (5 per case); `random` samples uniformly instead.
-- **Volume inference.** `predict()` runs the network on every axial slice of
-  the full volume (in chunks of `slice_chunk` slices), zero-padding the
-  in-plane size to a multiple of 32, and stacks the softmax maps back into a
-  3D prediction, so no sliding window is needed.
-- **Shared protocol.** Like every other model, NAP-SCAF uses the shared
-  subject z-score preprocessing (legacy clips each volume to its 1st-99th
-  percentiles and rescales to [0, 1] PNGs) and trains with random
-  missing-modality masks (legacy trains on full modalities only and
-  zero-fills missing ones at test time; zero-filling is what this port does
-  too).
-
-Two legacy behaviours are kept as-is because they define what the published
-model actually is:
-- **The NAP prior is never trained.** Legacy runs the VAE reconstruction
-  under `torch.no_grad()` and its forward pass returns plain logits, so the
-  reconstruction/KL terms in its `losses.py` never apply. The prior encoder
-  therefore stays at its ImageNet DenseNet121 weights (with a freshly
-  initialised 4-channel stem) and the prior decoder at its random
-  initialisation; only their BatchNorm running statistics change. The
-  reparameterisation noise is also sampled at inference, so predictions are
-  slightly stochastic. `pretrained_prior: true` loads the ImageNet weights
-  (downloaded once by torchvision).
-- **Unused merge convs.** The last decoder stage of both the prior U-Net and
-  the main decoder builds a merge conv that is never called; they are kept
-  so the parameter count matches the paper.
-
-Not ported: the three intermediate output heads legacy computes and then
-discards (only the last decoder stage's output is returned), the unused
-DenseNet121 classifier, and the `einops` dependency (replaced by reshapes).
-Training follows legacy's `train_brats.py`: `optimizer: adamw`, `lr: 1e-4`,
-`weight_decay: 1e-4`, `betas: [0.9, 0.99]`, a constant learning rate
-(`scheduler: step` with `step_gamma: 1.0`), mixed precision, and the
-`0.5 * CE + 0.5 * soft Dice` loss over softmax outputs (background
-included). Legacy's 150 epochs over ~5 fixed slices per case (~750 slices
-per case) become `num_epochs: 50` x 16 slices per patch (~800).
-
-### MIFPN-specific notes
-
-MIFPN (`trainer: mifpn`, `model: mifpn`, `loss: mifpn`) needed its own new
-trainer/loss because, while its decoder/bottleneck machinery is
-architecturally identical to M2FTrans's masked cross-modal transformer +
-deep-supervision pyramid decoder (reused here verbatim), legacy adds a
-"prompt generation" stage in front of it: a first masked-transformer pass
-over the 4 modalities' bottleneck tokens (plus a learned fusion token)
-produces a per-modality "prompt" and a shared missing-modality prompt
-(`mi_prompt`), each modality's prompt is injected back into its own
-bottleneck feature, and a second, structurally identical masked transformer
-produces the final fused representation for the decoder. A KL-divergence
-consistency loss (`kl_weight: 1.0`) pulls each modality's prompt toward
-`mi_prompt`, encouraging every modality — present or missing — to agree on
-a shared fused representation, on top of the usual fuse + 4×sep + 5×prm
-cross+dice terms (same `region_fusion_start_epoch` fuse-loss warmup
-mechanism as the IMFuse family, default `0`, i.e. no warmup).
-
-Legacy's cross-attention "fusion" block that injects each modality's prompt
-back into its own bottleneck feature is simplified here to a plain
-1x1x1-conv-projected residual addition — same information flow, without a
-second bespoke QKV attention module, since the actually-distinguishing idea
-(the prompt-generating transformer pass plus the KL consistency loss)
-doesn't depend on how the injection itself is implemented. A fair amount of
-legacy code was also outright dead (an unused `prm_generator`/
-`region_aware_modal_fusion` path, unused `MultiCrossToken` instances at the
-coarsest decoder scale whose output was computed then immediately
-discarded, a `Decoder_sep` shared across all 4 modalities rather than 4
-independent decoders, and a broken never-instantiated `S_Encoder` class)
-and is simply not ported. Legacy also has the same batch-level mask bug
-found in ShaSpec/MMMViT — `train.py` explicitly overwrites the per-sample
-dataset mask with `mask[0].repeat(batch_size, 1)`, forcing every sample in
-a batch to share the first sample's missing-modality pattern, independently
-reinforced by the repo's own mask-attention kernels only ever reading
-`mask[0]`. This port respects MiMoSe's true per-sample `[B, 4]` masks
-throughout. MIFPN trains at `patch_size: 80` (matching legacy's crop size)
-with `optimizer: adamw`, `lr: 0.0002`, `batch_size: 2`, and a `poly` LR
-schedule. As with M2FTrans, legacy's `AdamW(..., amsgrad=True)` is not
-exactly matched — MiMoSe's `adamw` does not auto-enable `amsgrad` (only
-`adam` does).
-
 ### RFL-specific notes
 
 RFL (`trainer: rfl`, `model: rfl`, `loss: rfl`) needed its
@@ -899,16 +755,16 @@ Legacy has two real bugs this port fixes:
   bottleneck reshape to batch size 1 — silently applying sample 0's
   missing-modality pattern to every sample in the batch. This port resolves
   the global modality and substitutes tokens per-sample, respecting
-  MiMoSe's true per-sample `[B, 4]` masks (verified with heterogeneous
+  MissingBench's true per-sample `[B, 4]` masks (verified with heterogeneous
   per-sample masks at `batch_size > 1`).
 
 Legacy also has the same `num_cls`/`num_modals` conflation bug found in
-SRMNet/MMMViT/IMS2Trans/MIFPN in its `fusion_prenorm` fusion blocks, fixed
+SRMNet/MMMViT/IMS2Trans in its `fusion_prenorm` fusion blocks, fixed
 here the same way (`FusionPrenorm` always uses `num_modals=4`). A fair
 amount of dead legacy code (unused `prm_generator`/`region_aware_modal_fusion`
 layers, unused decode-conv modules, several unused loss variants) is simply
 not ported. RFL trains at `patch_size: 128` with `optimizer: adam`
-(`amsgrad=True` matched via MiMoSe's `adam`), `lr: 0.0002`, `batch_size: 1`,
+(`amsgrad=True` matched via MissingBench's `adam`), `lr: 0.0002`, `batch_size: 1`,
 and a `poly` LR schedule.
 
 ### UNET-MFI-specific notes
@@ -925,7 +781,7 @@ combination of all 4 towers' globally-pooled features, conditioned on the
 cross-modal attention or shared bottleneck — each tower otherwise stays
 private. Each tower produces 2 internal deep-supervision predictions plus
 its own final prediction; the final fused prediction comes from a small
-conv over the 4 towers' final logits. This maps directly onto MiMoSe's
+conv over the 4 towers' final logits. This maps directly onto MissingBench's
 IMFuse-style contract (`fuse_pred`, 4 `sep_preds`, 8 `prm_preds` — 4
 modalities x 2 deep-supervision stages), so this port reuses
 `IMFuseTrainer`/`IMFuseLoss` verbatim.
@@ -938,7 +794,7 @@ branch its own independent relation network, matching what the 4 separate
 constructors evidently intended. Legacy also zeroes each modality's raw
 input once per sample inside the *dataset* rather than the model; this port
 applies the same zero-fill inside the model instead (`MaskModal`), since
-MiMoSe's dataset hands the model the full raw tensor plus a separate mask.
+MissingBench's dataset hands the model the full raw tensor plus a separate mask.
 Finally, legacy outputs 3 sigmoid BraTS-region channels (WT/TC/ET) trained
 with a BCE+Dice loss and a `class_nums` hardcoded to 3 in `train.py`; like
 every other model in this framework, this port instead uses a standard
@@ -972,7 +828,7 @@ scoring every `val_pred_every` training iterations and picks whichever
 modality currently scores best per region as the next chunk's teacher(s).
 That curriculum requires a mid-training, non-differentiable validation loop
 wired directly into the optimization step, which has no natural place in
-MiMoSe's per-batch trainer contract, so this port replaces it with a fixed,
+MissingBench's per-batch trainer contract, so this port replaces it with a fixed,
 symmetric scheme: **every modality present in a sample distills into every
 other present modality present in that same sample, equally, every training
 step** (an all-pairs L1 over the currently-present subset). This keeps the
@@ -988,7 +844,7 @@ the final prediction.
 Two real issues were fixed rather than faithfully reproduced:
 - Legacy applies one global `mode` string (which modalities are considered
   "available") to an entire training batch, the same batch-level masking
-  bug found in ShaSpec/MMMViT/MIFPN. This port respects MiMoSe's true
+  bug found in ShaSpec/MMMViT. This port respects MissingBench's true
   per-sample `[B, 4]` mask for both the missing-modality fill-in and the
   distillation loss, looping over the batch dimension (cheap at the small
   batch sizes 3D segmentation uses).
@@ -1051,7 +907,7 @@ bottleneck and 3 fused skip connections.
 Legacy resolves the batch's missing-modality pattern from a single scalar
 (`m_d[0]`, since legacy's dataloader hard-asserts `batch_size == 1`) and
 only ever encodes the *present* modalities (a variable-length list), which
-cannot be batched with MiMoSe's true per-sample `[B, 4]` masks. This port
+cannot be batched with MissingBench's true per-sample `[B, 4]` masks. This port
 always runs all 4 encoders and instead zero-fills token blocks plus masks
 attention keys and the final modality-softmax logits for modalities missing
 on a per-sample basis, which is equivalent to legacy's exclusion behavior
@@ -1083,6 +939,58 @@ never triggers within a normal run — i.e. legacy trains at a constant LR in
 practice, reproduced here via `scheduler: poly` with `poly_power: 0.0`
 (a "poly" multiplier of `(1 - progress)**0 == 1` for the whole run).
 
+### Plain U-Net notes
+
+Plain U-Net (`trainer: imfuse`, `model: plainunet`, `loss: dicece`) is a
+uniform-width nnU-Net-style 3D U-Net (`PlainUnet`, built on
+`dynamic_network_architectures`' `PlainConvUNet`) that takes the 4 modalities
+as input channels of a single joint encoder. Missing modalities are
+zero-filled at the input, and the bottleneck is conditioned on the
+modality-availability mask through a small FiLM-style MLP; beyond that it has
+no missing-modality-specific machinery. Inference uses sliding-window
+`predict()` over 128<sup>3</sup> tiles. Sixteen sizes are
+shipped (`plainunet_b01_23.yaml` ... `plainunet_b16_23.yaml`, from 1.9M to
+255.6M parameters); all share the same recipe (`patch_size: 128`,
+`optimizer: adamw`, `lr: 0.0003`, `batch_size: 3`, `num_epochs: 1000`, `poly`
+schedule, `precision: bf16`) and differ only in
+`custom_model_kwargs.features_per_stage`. The `dicece` loss (`DiceCELoss` in
+`losses/dice_ce.py`) is a weighted sum of soft Dice and cross-entropy
+(`dice_weight`, `ce_weight`).
+
+### MatUNet notes
+
+MatUNet (Matryoshka U-Net; `trainer: matunet`, `model: matunet`,
+`loss: dicece`) is a budget-conditioned supernet: one set of shared weights
+(`MatUnet`) serves a whole range of parameter budgets through learnable
+channel gates, and every budget selects a nested Plain U-Net subnetwork. The
+shipped `matunet_23.yaml` spans uniform 1/8 width up to the full
+`(64, 128, 256, 512, 1024)` width, i.e. ~1.43M to ~91.4M parameters.
+
+`MatUnetTrainer` extends `IMFuseTrainer`. Each optimizer step samples
+`budgets_per_step` budgets, evaluates the corresponding subnetworks on the
+same batch, and steps once on the accumulated gradient. The objective for a
+budget `b` is the segmentation loss plus a one-sided budget-overshoot penalty
+weighted by `lambda_param`. The gate temperature is annealed geometrically
+from `tau_start` to `tau_end` over `num_epochs`. The shipped config uses
+`budget_sampling: sandwich` (the widest subnetwork is always included);
+`local` and `global` sampling are also available.
+
+Two optional regularisers exist as trainer options but are **off** in the
+shipped config: `inplace_distill` (the widest subnetwork's detached output is
+used as a soft target for the other sampled subnetworks, mixed with
+`distill_alpha`) and `student_modality_drop` (non-widest subnetworks see one
+fewer available modality than the widest one).
+
+To evaluate a trained MatUNet at a given budget, pass the budget in
+parameters to `missingbench test` (see [docs/testing.md](testing.md)):
+
+```bash
+missingbench test --config matunet_23.yaml --budget 30000000 --budget-ceiling
+```
+
+`missingbench flops --config matunet_23.yaml --budget <params>` profiles the
+standalone network that budget selects.
+
 ## Model Kwargs
 
 `custom_model_kwargs` are passed directly to the selected model class.
@@ -1113,13 +1021,24 @@ custom_model_kwargs:
   fusion_type: RFM
 ```
 
-For `tinymimosa`:
+For `plainunet`:
 
 ```yaml
 custom_model_kwargs:
-  num_classes: 4
-  input_shape: [182, 218, 182]
-  features_per_stage: [8, 16, 32, 64]
+  num_cls: 4
+  input_shape: [128, 128, 128]
+  features_per_stage: [9, 18, 37, 72, 152]  # b01; the 16 plainunet_bXX configs differ only here
+```
+
+For `matunet`:
+
+```yaml
+custom_model_kwargs:
+  num_cls: 4
+  input_shape: [128, 128, 128]
+  features_per_stage: [64, 128, 256, 512, 1024]  # widest subnetwork
+  group_size: 4
+  tau: 0.05
 ```
 
 Selectable model-specific values currently exposed in docs:
@@ -1210,13 +1129,6 @@ custom_model_kwargs:
   num_cls: 4
 ```
 
-For `mifpn`:
-
-```yaml
-custom_model_kwargs:
-  num_cls: 4
-```
-
 For `rfl`:
 
 ```yaml
@@ -1248,7 +1160,7 @@ custom_model_kwargs:
 You can also override these from the CLI:
 
 ```bash
-mimose train \
+missingbench train \
   --model imfuse \
   --custom-model-kwargs interleaved_tokenization=True \
   --custom-model-kwargs mamba_skip=True
@@ -1273,14 +1185,14 @@ Allowed `wandb_mode` values:
 Example:
 
 ```bash
-mimose train \
-  --config src/mimose/data/configs/mmformer_23.yaml \
+missingbench train \
+  --config src/missingbench/data/configs/mmformer_23.yaml \
   --wandb-run-name mmformer-ablation-01
 ```
 
 The training launch panel also prints the resolved run name.
 
-If W&B logging is enabled but there is no active login in the terminal, MiMoSe now fails with a clean CLI message telling you to run `wandb login` or disable W&B with `--wandb-mode disabled`.
+If W&B logging is enabled but there is no active login in the terminal, MissingBench now fails with a clean CLI message telling you to run `wandb login` or disable W&B with `--wandb-mode disabled`.
 
 ## Distributed Training
 
@@ -1297,7 +1209,7 @@ CLI flags:
 - `--no-distributed`
 - `--nproc-per-node`
 
-When distributed mode is enabled outside an existing `torchrun` launch, MiMoSe relaunches itself through `torchrun`.
+When distributed mode is enabled outside an existing `torchrun` launch, MissingBench relaunches itself through `torchrun`.
 
 
 ## Example YAML
@@ -1307,14 +1219,14 @@ data_dir: /path/to/preprocessed
 art_dir: /path/to/run
 trainer: dcseg
 model: dcseg
-loss: dcseg
+loss: imfuse
 
 custom_model_kwargs:
   num_cls: 4
   fusion_type: RFM
 
 custom_trainer_kwargs:
-  patch_size: 112
+  patch_size: 80
   transform_kind: imfuse
   train_masking_mode: random
   val_masking_mode: validation
@@ -1339,12 +1251,12 @@ weight_decay: 0.0001
 batch_size: 1
 num_epochs: 500
 num_workers: 8
-fp16: false
+precision: fp32
 resume: false
 pretrain: null
 seed: 999
 
-wandb_project: SegmentationMM
+wandb_project: MissingBench
 wandb_mode: online
 wandb_run_name: training
 dataset_type: brats23

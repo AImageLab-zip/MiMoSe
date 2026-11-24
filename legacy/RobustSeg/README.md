@@ -3,9 +3,6 @@
 <p align="center">
   <img src="fig/framework.png">
 </p>
-✅ Tested at commit: 
-8359e49
-
 ## Requirements
 Code was tested using:
 ```

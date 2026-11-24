@@ -3,8 +3,6 @@
 [[Paper]](https://arxiv.org/abs/2310.01035) [[Code]](https://github.com/billh hh/LCKD) MICCAI 2023
 ![LCKD overview](/LCKD/fig/lckd.png)
 
-✅ Tested at commit: 
-??????? #TODO
 
 ## Requirements
 This code was tested using:

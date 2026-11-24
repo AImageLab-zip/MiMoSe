@@ -18,8 +18,8 @@ user = "LH"
 BRATS_TRAIN_FOLDERS='/yourpath/2-MICCAI_BraTS_2018/MICCAI_BraTS_2018_Data_Training'
 TEST_FOLDER='/yourpath/2-MICCAI_BraTS_2018/MICCAI_BraTS_2018_Data_Validation'
 BRATS_TRAIN_FOLDERS_20='Path of your brats dataset'  # (*/BRATS2020_Training_none_npy)
-BRATS_TRAIN_FOLDERS_23='/work/grana_neuro/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'  # (*/BRATS2020_Training_none_npy)
-ROOT = '/work/grana_neuro/missing_modalities/m3ae/' #root of the project
+BRATS_TRAIN_FOLDERS_23='/path/to/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData'  # (*/BRATS2020_Training_none_npy)
+ROOT = '/path/to/missing_modalities/m3ae/' #root of the project
 
 def get_brats_folder():
     return BRATS_TRAIN_FOLDERS

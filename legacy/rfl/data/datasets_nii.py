@@ -36,7 +36,7 @@ mask_array = np.array(
 
 class Brats_loadall_nii(Dataset):
     def __init__(self, transforms='', root=None, modal='all', num_cls=4, train_file='train.txt'):
-        data_file_path = os.path.join('/work/grana_neuro/missing_modalities/rfl', train_file)
+        data_file_path = os.path.join('/path/to/missing_modalities/rfl', train_file)
         with open(data_file_path, 'r') as f:
             datalist = [i.strip() for i in f.readlines()] #875 elements
         # datalist.sort()
@@ -94,7 +94,7 @@ class Brats_loadall_nii(Dataset):
 
 class Brats_loadall_test_nii(Dataset):
     def __init__(self, transforms='', root=None, test_file='test.txt', modal='all', num_cls=4):
-        data_file_path = os.path.join('/work/grana_neuro/missing_modalities/rfl', test_file)
+        data_file_path = os.path.join('/path/to/missing_modalities/rfl', test_file)
         df = pd.read_csv(data_file_path)
         datalist = df['case']
         #with open(data_file_path, 'r') as f:
@@ -158,7 +158,7 @@ class Brats_loadall_test_nii(Dataset):
 
 class Brats_loadall_val_nii(Dataset):
     def __init__(self, transforms='', root=None, val_file='val.txt', modal='all', num_cls=4):
-        data_file_path = os.path.join('/work/grana_neuro/missing_modalities/rfl', val_file)
+        data_file_path = os.path.join('/path/to/missing_modalities/rfl', val_file)
         df = pd.read_csv(data_file_path)
         datalist = df['case']
         #with open(data_file_path, 'r') as f:

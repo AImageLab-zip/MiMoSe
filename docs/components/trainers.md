@@ -4,13 +4,13 @@ This document explains how to add or modify trainers in detail.
 
 Relevant files:
 
-- `src/mimose/checkpoints.py`
-- `src/mimose/training/trainers/abstract_trainer.py`
-- `src/mimose/training/trainers/base_trainer.py`
-- `src/mimose/training/trainers/imfuse.py`
-- `src/mimose/training/trainers/dcseg.py`
-- `src/mimose/training/trainers/__init__.py`
-- `src/mimose/cli.py`
+- `src/missingbench/checkpoints.py`
+- `src/missingbench/training/trainers/abstract_trainer.py`
+- `src/missingbench/training/trainers/base_trainer.py`
+- `src/missingbench/training/trainers/imfuse.py`
+- `src/missingbench/training/trainers/dcseg.py`
+- `src/missingbench/training/trainers/__init__.py`
+- `src/missingbench/cli.py`
 
 ## Mental Model
 
@@ -43,10 +43,14 @@ These implement model-family-specific behavior:
 - `IMFuseTrainer` for IMFuse-compatible models such as `imfuse`, `mmformer`,
   and `rfnet`
 - `DCSegTrainer`
+- `MatUnetTrainer` (`trainer: matunet`) for the budget-conditioned MatUNet supernet
+- one trainer per baseline that needs its own training loop (`uhved`, `robustseg`,
+  `shaspec`, `m3ae`, `m3fecon`, `srmnet`, `ims2trans`, `mstkdnet`, `rfl`, `lckd`,
+  `mambavitakd`)
 
 ## Add a New Trainer
 
-1. create `src/mimose/training/trainers/my_trainer.py`
+1. create `src/missingbench/training/trainers/my_trainer.py`
 2. subclass `BaseTrainer`
 3. implement:
    - `train_epoch(self, epoch)`

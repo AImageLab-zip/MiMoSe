@@ -3,8 +3,6 @@
 [[Paper]](https://conferences.miccai.org/2022/papers/322-Paper0649.html) [[Code]](https://github.com/zzc1909/UNET-MFI) MICCAI 2022
 ![MODEL_NAME overview](/UNET-MFI/unet-mfi.png)
 
-✅ Tested at commit: 
-??????? 
 
 ## Requirements
 This code was tested using:

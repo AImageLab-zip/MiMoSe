@@ -1,6 +1,6 @@
 # Testing
 
-`mimose test` evaluates a checkpoint by sweeping the standard 15 missing-modality masks and writing a text report plus an Excel summary.
+`missingbench test` evaluates a checkpoint by sweeping the standard 15 missing-modality masks and writing a text report plus an Excel summary.
 
 The active testing path currently uses:
 
@@ -13,13 +13,13 @@ The active testing path currently uses:
 Run from YAML:
 
 ```bash
-mimose test --config src/mimose/data/configs/imfuse_23.yaml
+missingbench test --config src/missingbench/data/configs/imfuse_23.yaml
 ```
 
 Run from CLI:
 
 ```bash
-mimose test \
+missingbench test \
   --data-dir /path/to/preprocessed \
   --checkpoint-path /path/to/final_weights_only.safetensors \
   --output-path /path/to/results.txt \
@@ -30,7 +30,7 @@ mimose test \
 Run from CLI with an online checkpoint cache:
 
 ```bash
-mimose test \
+missingbench test \
   --data-dir /path/to/preprocessed \
   --art-dir /path/to/artifacts/run1 \
   --online \
@@ -40,6 +40,20 @@ mimose test \
   --dataset-type brats23 \
   --model dcseg
 ```
+
+## Testing a MatUNet Budget
+
+MatUNet (`model: matunet`) is a budget-conditioned supernet, so a single checkpoint can be evaluated at any parameter budget inside its range (~1.4M to ~91.4M parameters for the shipped config). Select the budget with `--budget` (number of parameters) and add `--budget-ceiling` so that, if the subnetwork chosen for that budget slightly overshoots it, the largest subnetwork whose exact parameter count fits is evaluated instead:
+
+```bash
+missingbench test --config matunet_23.yaml --budget 30000000 --budget-ceiling
+```
+
+Without `--budget`, the widest subnetwork is evaluated.
+
+## Faster Mask Sweep
+
+`missingbench test-fast` produces the same mask-sweep report as `test`, but loads each subject once and reuses it across all 15 masks, batching the masked copies with `--batch-size`.
 
 ## Required Inputs
 
@@ -57,16 +71,10 @@ Use one of these checkpoint inputs:
 
 `model` is optional in the CLI because it defaults to `imfuse`, but for a real run you should set it explicitly unless the config already does.
 
-For the overall MiMoSe YAML format, see [docs/yaml-config.md](yaml-config.md).
+For the overall MissingBench YAML format, see [docs/yaml-config.md](yaml-config.md).
 For a very detailed extension guide for the testing path, see [docs/components/testing.md](components/testing.md).
 
-Active tested model choices currently include:
-
-- `imfuse`
-- `mmformer`
-- `dcseg`
-- `rfnet`
-- `tinymimosa`
+Any value of `ModelKind` (see [docs/yaml-config.md](yaml-config.md)) can be tested: the 21 baselines, `plainunet`, and `matunet`.
 
 Dataset type choices:
 
@@ -100,12 +108,12 @@ The current metrics reported are:
 ## Current Constraints
 
 - testing currently requires CUDA
-- batch size is fixed to `1`
+- batch size is fixed to `1` for `test` (`test-fast` batches the masked copies of one subject)
 - the evaluation path is built for the BraTS-style 4-class setup used by the active models
 
 If a checkpoint is missing, the command raises a clean CLI error.
 
-If `online` is enabled, MiMoSe downloads the checkpoint from Hugging Face using `hf_repo` and `hf_run_name`, stores it at `art_dir/checkpoints/hf/<repo>/<run>/final_weights_only.safetensors`, and reuses that cached file on later runs if it is already present.
+If `online` is enabled, MissingBench downloads the checkpoint from Hugging Face using `hf_repo` and `hf_run_name`, stores it at `art_dir/checkpoints/hf/<repo>/<run>/final_weights_only.safetensors`, and reuses that cached file on later runs if it is already present.
 
 ## YAML Fields
 
@@ -121,6 +129,7 @@ The test command reads these fields from the combined config files:
 - `model`
 - `custom_model_kwargs`
 - `split_file`
+- `fold`
 - `num_workers`
 - `seed`
 - `dataset_type`
@@ -128,9 +137,9 @@ The test command reads these fields from the combined config files:
 ## Example
 
 ```yaml
-data_dir: /work/grana_neuro/mimose/dcseg23-preprocessed
-checkpoint_path: /work/grana_neuro/mimose/runs/dcseg23/checkpoints/final_weights_only.safetensors
-output_path: /work/grana_neuro/mimose/runs/dcseg23/results.txt
+data_dir: /path/to/missingbench/dcseg23-preprocessed
+checkpoint_path: /path/to/missingbench/runs/dcseg23/checkpoints/final_weights_only.safetensors
+output_path: /path/to/missingbench/runs/dcseg23/results.txt
 model: dcseg
 custom_model_kwargs:
   num_cls: 4
@@ -143,12 +152,12 @@ seed: 42
 Online-checkpoint example:
 
 ```yaml
-data_dir: /work/grana_neuro/mimose/dcseg23-preprocessed
-art_dir: /work/grana_neuro/mimose/runs/dcseg23
+data_dir: /path/to/missingbench/dcseg23-preprocessed
+art_dir: /path/to/missingbench/runs/dcseg23
 online: true
 hf_repo: owner/repo
 hf_run_name: dcseg23
-output_path: /work/grana_neuro/mimose/runs/dcseg23/results.txt
+output_path: /path/to/missingbench/runs/dcseg23/results.txt
 model: dcseg
 dataset_type: brats23
 num_workers: 8

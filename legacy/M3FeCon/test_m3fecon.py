@@ -4,7 +4,7 @@ import os
 import nibabel as nib
 import torch
 
-root = "/work/grana_neuro/nnUNet_raw/Dataset138_BraTS2023/"
+root = "/path/to/nnUNet_raw/Dataset138_BraTS2023/"
 dir_list = glob.glob(os.path.join(root, "prediction_*"))
 
 for d in dir_list:
@@ -15,7 +15,7 @@ for d in dir_list:
         image = nifti_image.get_fdata()
         tensor_image = torch.from_numpy(image)
         f = os.path.basename(f)
-        target = nib.load(os.path.join("/work/grana_neuro/nnUNet_raw/Dataset138_BraTS2023/labelsTs", f)).get_fdata()
+        target = nib.load(os.path.join("/path/to/nnUNet_raw/Dataset138_BraTS2023/labelsTs", f)).get_fdata()
         tensor_target = torch.from_numpy(target)
         mask_1 = (image == 1)
         mask_2 = (image == 2)

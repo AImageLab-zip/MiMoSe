@@ -10,7 +10,7 @@
 
 \begin{document}
 
-\section*{MiMoSe CLI Help Boxes}
+\section*{MissingBench CLI Help Boxes}
   
 \begin{figure}[h]
 \centering
@@ -19,7 +19,7 @@
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe CLI,
+  title=MissingBench CLI,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -36,11 +36,15 @@ Commands
   preprocess-train         Prep + train
   train                    Train model
   test                     Run test
+  test-fast                Fast mask sweep
+  push                     Upload ckpt
+  export                   Package ckpt
   flops                    Profile FLOPs
+  interference             Budget grad test
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Command-line interface of the MiMoSe framework}
-\label{fig:mimose_cli}
+\caption{Command-line interface of the MissingBench framework}
+\label{fig:missingbench_cli}
 \end{figure}
 
 \begin{figure}[h]
@@ -50,7 +54,7 @@ Commands
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe setup,
+  title=MissingBench setup,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -59,8 +63,8 @@ Options
   --help                   Help
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe setup command}
-\label{fig:mimose_setup}
+\caption{Help box for the MissingBench setup command}
+\label{fig:missingbench_setup}
 \end{figure}
 
 \begin{figure}[h]
@@ -70,7 +74,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe preprocess,
+  title=MissingBench preprocess,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -79,7 +83,7 @@ Options
   --config PATH                         Config
   --input-dir DIRECTORY                 Input dir
   --output-dir DIRECTORY                Output dir
-  --dataset-type [brats18|brats23]      Dataset
+  --dataset-type [brats18|brats23|brats25]      Dataset
 
   [Cropping]
   --crop-mode TEXT                      Crop mode
@@ -103,8 +107,8 @@ Options
   --help                                Help
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe preprocess command. FP means floating-point number, INT means integer number, DIR means existing directory name, and STR means string.}
-\label{fig:mimose_preprocess}
+\caption{Help box for the MissingBench preprocess command. FP means floating-point number, INT means integer number, DIR means existing directory name, and STR means string.}
+\label{fig:missingbench_preprocess}
 \end{figure}
 
 \begin{figure}[h]
@@ -114,7 +118,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe preprocess-train,
+  title=MissingBench preprocess-train,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -126,11 +130,12 @@ Options
   [Runtime]
   --distributed / --no-distributed      DDP
   --nproc-per-node INT                  Procs
+  --nnodes INT                          Nodes
   --help                                Help
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe preprocess-train command}
-\label{fig:mimose_preprocess_train}
+\caption{Help box for the MissingBench preprocess-train command}
+\label{fig:missingbench_preprocess_train}
 \end{figure}
 
 \begin{figure}[h]
@@ -140,7 +145,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe train: config and model,
+  title=MissingBench train: config and model,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -149,8 +154,9 @@ Options
   --config PATH
   --data-dir DIRECTORY
   --art-dir DIRECTORY
-  --dataset-type [brats18|brats23]
+  --dataset-type [brats18|brats23|brats25]
   --split-file PATH
+  --fold INT
 
   [Trainer / Model]
   --trainer TEXT
@@ -160,8 +166,8 @@ Options
   --transform-kind TEXT
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe train command: configuration and model options}
-\label{fig:mimose_train_config_model}
+\caption{Help box for the MissingBench train command: configuration and model options}
+\label{fig:missingbench_train_config_model}
 \end{figure}
 
 \begin{figure}[h]
@@ -171,7 +177,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe train: loss and optimization,
+  title=MissingBench train: loss and optimization,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -180,17 +186,13 @@ Options
   [Loss]
   --loss TEXT
   --custom-loss-kwargs TEXT
-  --loss-num-classes INT
-  --fuse-weight FP
-  --sep-weight FP
-  --prm-weight FP
-  --loss-eps FP
-  --log-clamp-min FP
 
   [Optimization]
   --optimizer TEXT
   --betas FP FP
   --momentum FP
+  --nesterov / --no-nesterov
+  --amsgrad / --no-amsgrad
   --lr FP
   --weight-decay FP
 
@@ -198,6 +200,7 @@ Options
   --scheduler TEXT
   --poly-total-iters INT
   --poly-power FP
+  --warmuppoly-warmup-iters INT
   --cosine-t-max INT
   --cosine-eta-min FP
   --step-step-size INT
@@ -209,8 +212,8 @@ Options
   --plateau-patience INT
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe train command: loss, optimization, and scheduler options}
-\label{fig:mimose_train_optimization}
+\caption{Help box for the MissingBench train command: loss, optimization, and scheduler options}
+\label{fig:missingbench_train_optimization}
 \end{figure}
 
 \begin{figure}[h]
@@ -220,7 +223,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe train: execution and logging,
+  title=MissingBench train: execution and logging,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -228,26 +231,34 @@ Options
 
   [Training]
   --num-epochs INT
+  --validation-every INT
   --batch-size INT
 
   [Runtime]
   --num-workers INT
   --distributed / --no-distributed
   --nproc-per-node INT
-  --fp16
+  --nnodes INT
+  --precision [fp32|fp16|bf16]
+  --compile
   --seed INT
+  --run-suffix TEXT
 
   [Checkpointing / Logging]
   --resume
+  --try-resume
   --pretrain PATH
   --wandb-project TEXT
+  --wandb-entity TEXT
   --wandb-mode TEXT
   --wandb-run-name TEXT
+  --push-to-hf / --no-push-to-hf
+  --hf-repo TEXT
   --help
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe train command: training, runtime, and logging options}
-\label{fig:mimose_train_runtime}
+\caption{Help box for the MissingBench train command: training, runtime, and logging options}
+\label{fig:missingbench_train_runtime}
 \end{figure}
 
 \begin{figure}[h]
@@ -257,7 +268,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe test,
+  title=MissingBench test,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -268,23 +279,29 @@ Options
   --output-path PATH                    Output
   --art-dir DIRECTORY                   Art dir
   --checkpoint-path PATH                Checkpoint
-  --checkpoint-link TEXT                Ckpt URL
   --online                              Online ckpt
-  --dataset-type [brats18|brats23]      Dataset
+  --hf-repo TEXT                        HF repo
+  --hf-run-name TEXT                    HF run
+  --dataset-type [brats18|brats23|brats25]      Dataset
   --split-file PATH                     Split
+  --fold INT                            Fold
 
   [Model]
   --model TEXT                          Model
   --custom-model-kwargs TEXT            Model args
+  --budget FP                           Budget
+  --budget-ceiling                      Fit budget
 
   [Runtime]
   --num-workers INT                     Workers
   --seed INT                            Seed
+  --precision [fp32|fp16|bf16]          Precision
+  --run-suffix TEXT                     Run suffix
   --help                                Help
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe test command}
-\label{fig:mimose_test}
+\caption{Help box for the MissingBench test command}
+\label{fig:missingbench_test}
 \end{figure}
 
 \begin{figure}[h]
@@ -294,7 +311,7 @@ Options
   colframe=lightgreenframe,
   arc=2mm,
   boxrule=0.6pt,
-  title=MiMoSe flops,
+  title=MissingBench flops,
   fonttitle=\bfseries
 ]
 \begin{Verbatim}[breaklines=true,breakanywhere=true,fontsize=\small]
@@ -303,15 +320,24 @@ Options
   --config PATH                         Config
   --model TEXT                          Model
   --custom-model-kwargs TEXT            Model args
+  --budget FP                           Budget
+  --budget-sweep INT                    Budget sweep
+  --checkpoint PATH                     Checkpoint
 
   [Runtime]
   --device TEXT                         Device
+  --warmup INT                          Warmup
+  --precision [fp32|fp16|bf16]          Precision
+  --latency-only                        Latency only
+  --half                                Half prec.
+  --full-modality-only                  Full mods
   --all                                 All cfgs
+  --output-path PATH                    Output
   --help                                Help
 \end{Verbatim}
 \end{tcolorbox}
-\caption{Help box for the MiMoSe flops command}
-\label{fig:mimose_flops}
+\caption{Help box for the MissingBench flops command}
+\label{fig:missingbench_flops}
 \end{figure}
 
 \end{document}

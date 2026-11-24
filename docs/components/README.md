@@ -1,6 +1,6 @@
 # Component Extension Docs
 
-This folder contains detailed extension guides for the main MiMoSe components.
+This folder contains detailed extension guides for the main MissingBench components.
 
 These documents are intentionally more exhaustive than [docs/extending.md](../extending.md).
 
