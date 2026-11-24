@@ -5,7 +5,7 @@
 </p>
 
 ## How to run
-Run U-HVED using the same [data preprocessing as IM-Fuse](/OLD_README.md).
+Run U-HVED using the same [data preprocessing as IM-Fuse](../IMFuse/README.md).
 After running the preprocessing, create the following python environment:
 ```
 cd UHVED

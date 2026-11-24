@@ -2,17 +2,11 @@
 .venv
 *__pycache__*
 *egg-info*
-#*sbatch_files*
 .codex
 *wandb*
 *.vscode*
-src/missingbench/data/configs_2
 *venv*
-ReHyDIL/outputs
-*wandb*
 src/missingbench/data/configs
 *claude*
 .*
-!.env.example
-test_to_redo.txt
 outputs/

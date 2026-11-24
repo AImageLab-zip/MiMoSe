@@ -99,32 +99,3 @@ def irm_min_max(images: np.ndarray, config: NormConfig) -> np.ndarray:
         scale = modal.max() - modal.min()
         out[i] = (modal - modal.min()) / scale if scale > 0 else np.zeros_like(modal)
     return out
-
-
-def subject_zscore_nonzero(images: np.ndarray, config: NormConfig) -> np.ndarray:
-    """Legacy M3AE/MCPL ``zscore_normalise`` (``legacy/MCPL/dataset/image_utils.py``), per modality:
-    z-score the nonzero voxels with their own mean/std and leave the background at 0."""
-    check_size(images)
-    out = images.astype(np.float32, copy=True)
-    for i in range(out.shape[0]):
-        modal = out[i]
-        nonzero = modal != 0
-        if not nonzero.any():
-            continue
-        values = modal[nonzero]
-        std = values.std()
-        modal[nonzero] = (values - values.mean()) / std if std > 0 else 0.0
-    return out
-
-
-def volume_zscore(images: np.ndarray, config: NormConfig) -> np.ndarray:
-    """Legacy ALoRA-MoE per-channel z-score (``lora_moe_hgd/datasets.py``), per modality:
-    ``(x - mean) / (std + 1e-6)`` over *all* voxels of the volume, background included.
-    Use with ``crop_mode: none`` so the statistics see the whole volume, as in legacy."""
-    check_size(images)
-    out = images.astype(np.float32, copy=True)
-    for i in range(out.shape[0]):
-        modal = out[i]
-        # torch.Tensor.std is unbiased.
-        out[i] = (modal - modal.mean()) / (modal.std(ddof=1) + 1e-6)
-    return out

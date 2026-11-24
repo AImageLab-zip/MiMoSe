@@ -34,8 +34,7 @@ def build_missingbench_zipapp(output_path: Path) -> Path:
     skipped, as is `missingbench/testing/` (`EXCLUDED_TOP_LEVEL_DIRS`) -- the
     mask-sweep/Dice/HD95 scoring loop deliberately never ships inside a
     `.missingbenchpkg`; only what's needed to reconstruct the model and call
-    `predict()` does. See `docker/harness/testing_loop.py` for the harness's
-    own copy of that loop, which runs outside the package instead.
+    `predict()` does.
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

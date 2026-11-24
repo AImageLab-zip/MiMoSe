@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import (
 class WarmupPolyLR(LRScheduler):
     """Linear LR warmup for `warmup_iters` epochs, then polynomial decay for the rest.
 
-    Matches legacy MIFPN/M2FTrans's ``LR_Scheduler(mode='warmuppoly')``: for
+    Matches legacy M2FTrans's ``LR_Scheduler(mode='warmuppoly')``: for
     ``epoch < warmup_iters``, lr ramps linearly from 0 to base_lr; afterwards it
     poly-decays to 0 by ``total_iters`` with the given ``power``.
     """
@@ -254,7 +254,7 @@ def build_scheduler_config(
 @dataclass(frozen=True)
 class WandbConfig:
     enabled: bool = True
-    project: str = "SegmentationMM"
+    project: str = "MissingBench"
     run_name: str | None = "training"
     mode: str = "online"
     resume: str = "allow"

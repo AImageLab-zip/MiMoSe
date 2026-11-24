@@ -556,7 +556,7 @@ class InOutFusion(AbstractModel):
     - Legacy's `general_dice_loss` hardcodes per-class Dice weights
       `[0.1, 0.2, 0.3, 0.4]`, tied to exactly 4 classes; this silently
       breaks for BraTS25's 5 classes (the same `num_cls`-vs.-class-count
-      class of bug found in SRMNet/MMMViT/IMS2Trans/MIFPN/RFL, though
+      class of bug found in SRMNet/MMMViT/IMS2Trans/RFL, though
       here it lives in the loss rather than a module constructor). See
       `InOutFusionLoss` for the generalized per-class weighting.
 

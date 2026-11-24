@@ -10,7 +10,7 @@ def legacy_intensity_flip(
     shift: float = 0.1,
     scale: float = 0.1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Legacy M3AE/MCPL fine-tuning augmentation ``Compose([RandomIntensityChange((0.1, 0.1)),
+    """Legacy M3AE fine-tuning augmentation ``Compose([RandomIntensityChange((0.1, 0.1)),
     RandomFlip(0)])`` (``legacy/m3ae/dataset/transforms.py``), applied to a whole batch at once.
 
     Upstream runs it on a ``(B, X, Y, Z, C)`` array with factors shaped ``[1, X, 1, 1, C]``, so the

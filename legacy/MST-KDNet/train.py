@@ -271,9 +271,8 @@ def main():
     wandb_name_and_id = f'{config["dataset"]}_MST-KDNet_jobid{slurm_job_id}'
     if not config["debug"]:
         wandb.init(
-            project="SegmentationMM",
+            project="MissingBench",
             name=wandb_name_and_id,
-            #entity="maxillo",
             id=wandb_name_and_id,
             resume="allow",
             config=config

@@ -8,7 +8,7 @@ version = "0.0.2"
 description = "This repository provides a unified benchmark for brain tumor segmentation under missing modality conditions, built on the BraTS 2023 dataset. It offers a standardized framework to fairly reproduce, evaluate, and compare state-of-the-art methods designed for incomplete multimodal medical imaging."
 readme = "README.md"
 requires-python = "==3.12.*"
-license = { text = "MIT" }
+license = { text = "CC-BY-NC-4.0" }
 authors = [
   { name = "Anonymous" },
 ]

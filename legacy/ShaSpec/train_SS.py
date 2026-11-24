@@ -223,9 +223,8 @@ def main():
         args = parser.parse_args()
         wandb_name_and_id = f'BraTS23_ShaSpec_steps{args.num_steps}_{"warmup" if args.warm_up else ""}_jobid{slurm_job_id}'
         wandb.init(
-            project="SegmentationMM",
+            project="MissingBench",
             name=wandb_name_and_id,
-            #entity="maxillo",
             id=wandb_name_and_id,
             resume="allow",
             config={

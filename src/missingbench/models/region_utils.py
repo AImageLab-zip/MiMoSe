@@ -26,14 +26,4 @@ def regions_to_label_one_hot(region_logits: torch.Tensor, num_cls: int = 4) -> t
     return _threshold_to_label_one_hot(region_logits, num_cls, "[ET, TC, WT]")
 
 
-def disjoint_classes_to_label_one_hot(class_logits: torch.Tensor, num_cls: int = 4) -> torch.Tensor:
-    """Turns non-overlapping ``[ET, NCR, ED]`` class logits (legacy MCPL targets) into a 4-class
-    one-hot volume whose argmax is the label map.
-
-    Each channel is thresholded at ``sigmoid > 0.5``. The sigmoid channels are independent and may
-    overlap, so ET takes precedence over NCR, and NCR over ED.
-    """
-    return _threshold_to_label_one_hot(class_logits, num_cls, "[ET, NCR, ED]")
-
-
-__all__ = ["disjoint_classes_to_label_one_hot", "regions_to_label_one_hot"]
+__all__ = ["regions_to_label_one_hot"]

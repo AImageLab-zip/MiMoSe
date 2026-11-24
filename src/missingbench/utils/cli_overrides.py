@@ -9,7 +9,7 @@ CONFIGS_DIR = DATA_DIR / "configs"
 SPLITS_DIR = DATA_DIR / "splits"
 
 # Combined cross-validation split file (fold index at the top level). Used as the
-# default split source whenever a --fold is requested. See onetime_scripts/make_kfold_splits.py.
+# default split source whenever a --fold is requested.
 KFOLD_SPLIT_FILENAME = "splits_5fold.json"
 
 

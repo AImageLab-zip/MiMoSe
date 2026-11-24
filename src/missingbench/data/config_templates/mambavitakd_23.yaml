@@ -131,7 +131,7 @@ resume: false
 pretrain: null
 seed: 0
 
-wandb_project: SegmentationMM
+wandb_project: MissingBench
 wandb_entity: null
 wandb_mode: online
 wandb_run_name: mambavitakd23_training

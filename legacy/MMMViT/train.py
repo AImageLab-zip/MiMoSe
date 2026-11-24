@@ -79,9 +79,8 @@ def main():
     wandb_name_and_id = f'{args.dataname}_mmmvit_epoch{args.num_epochs}_iter{args.iter_per_epoch}_jobid{slurm_job_id}'
     if not args.debug:
         wandb.init(
-            project="SegmentationMM",
+            project="MissingBench",
             name=wandb_name_and_id,
-            #entity="maxillo",
             id=wandb_name_and_id,
             resume="allow",
             config={

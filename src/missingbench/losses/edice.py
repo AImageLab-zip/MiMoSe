@@ -6,22 +6,15 @@ import torch.nn.functional as F
 
 def labels_to_regions(target: torch.Tensor) -> torch.Tensor:
     """BraTS regions ``[ET, TC, WT]`` from a 4-class one-hot target (labels 1=NCR, 2=ED, 3=ET),
-    in legacy M3AE/MCPL channel order (``legacy/m3ae/dataset/brats.py``: ``np.stack([et, tc, wt])``)."""
+    in legacy M3AE channel order (``legacy/m3ae/dataset/brats.py``: ``np.stack([et, tc, wt])``)."""
     et = target[:, 3]
     tc = target[:, 1] + target[:, 3]
     wt = target[:, 1] + target[:, 2] + target[:, 3]
     return torch.stack((et, tc, wt), dim=1).clamp(0.0, 1.0)
 
 
-def labels_to_disjoint_classes(target: torch.Tensor) -> torch.Tensor:
-    """Non-overlapping BraTS classes ``[ET, NCR, ED]`` from a 4-class one-hot target (labels 1=NCR,
-    2=ED, 3=ET), in legacy MCPL channel order (``legacy/MCPL/dataset/brats.py:77``:
-    ``np.stack([label == 4, label == 1, label == 2])``)."""
-    return target[:, [3, 1, 2]]
-
-
 def edice_loss(logits: torch.Tensor, regions: torch.Tensor) -> dict[str, torch.Tensor]:
-    """Literal port of legacy M3AE/MCPL ``EDiceLoss.forward`` (``legacy/m3ae/loss/dice.py``).
+    """Literal port of legacy M3AE ``EDiceLoss.forward`` (``legacy/m3ae/loss/dice.py``).
 
     Per region channel: a batch-pooled soft Dice on ``sigmoid(logits)`` with squared denominator
     and ``smooth=1``, plus ``BCELoss(sigmoid(logits), target)``; combined as
@@ -45,4 +38,4 @@ def edice_loss(logits: torch.Tensor, regions: torch.Tensor) -> dict[str, torch.T
     return {"loss": cross + dice, "cross": cross, "dice": dice}
 
 
-__all__ = ["edice_loss", "labels_to_disjoint_classes", "labels_to_regions"]
+__all__ = ["edice_loss", "labels_to_regions"]

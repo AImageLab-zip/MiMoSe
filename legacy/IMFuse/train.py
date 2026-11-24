@@ -81,9 +81,8 @@ def main():
     # if args.debug:
     #     wandb_mode = 'disabled'
     wandb.init(
-        project="SegmentationMM",
+        project="MissingBench",
         name=wandb_name_and_id,
-        # entity="NeuroTumor",
         id=wandb_name_and_id,
         mode=wandb_mode,
         resume="allow",

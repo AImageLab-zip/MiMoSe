@@ -532,7 +532,7 @@ class RFL(AbstractModel):
       per-sample, respecting MissingBench's true per-sample `[B, 4]` masks.
 
     Legacy also has the same `num_cls`/`num_modals` conflation bug found in
-    SRMNet/MMMViT/IMS2Trans/MIFPN in its `fusion_prenorm` fusion blocks,
+    SRMNet/MMMViT/IMS2Trans in its `fusion_prenorm` fusion blocks,
     fixed here the same way (`FusionPrenorm` always uses `num_modals=4`).
 
     [1] original RFL missing-modality brain tumor segmentation model.

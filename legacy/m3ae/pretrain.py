@@ -87,9 +87,8 @@ def main(args):
         slurm_job_id = os.getenv("SLURM_JOB_ID")
         wandb_name_and_id = f'BraTS23_m3ae_pretrain_epoch{args.epochs}_mask_ratio{args.mask_ratio}_jobid{slurm_job_id}'
         wandb.init(
-            project="SegmentationMM",
+            project="MissingBench",
             name=wandb_name_and_id,
-            #entity="maxillo",
             id=wandb_name_and_id,
             resume="allow",
             config={

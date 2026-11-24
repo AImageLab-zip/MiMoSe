@@ -875,9 +875,8 @@ class nnUNetTrainer(object):
         slurm_job_id = os.getenv("SLURM_JOB_ID")
         wandb_name_and_id = f'BraTS23_M3FeCon_epoch{self.num_epochs}_jobid{slurm_job_id}'
         wandb.init(
-            project="SegmentationMM",
+            project="MissingBench",
             name=wandb_name_and_id,
-            # entity="maxillo",
             id=wandb_name_and_id,
             resume="allow",
             config={

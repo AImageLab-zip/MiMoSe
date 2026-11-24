@@ -13,7 +13,7 @@ MASK_SAMPLING_MODES = ("subset_uniform", "count_uniform")
 
 
 def sample_count_uniform_mask(num_modalities: int) -> torch.Tensor:
-    """Number of present modalities ~ U{1..M}, then a uniform subset of that size (U-HVED/ShaSpec/M3AE/MCPL)."""
+    """Number of present modalities ~ U{1..M}, then a uniform subset of that size (U-HVED/ShaSpec/M3AE)."""
     count = int(torch.randint(1, num_modalities + 1, size=(1,)).item())
     present = torch.randperm(num_modalities)[:count]
     mask = torch.zeros(num_modalities, dtype=torch.bool)

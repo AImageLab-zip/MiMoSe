@@ -142,3 +142,7 @@ Field-by-field guide: [docs/yaml-config.md](docs/yaml-config.md)
 - [docs/testing.md](docs/testing.md): evaluation
 - [docs/extending.md](docs/extending.md): adding models, trainers, losses, datasets
 - [docs/components/README.md](docs/components/README.md): detailed component-by-component extension guides
+
+## License
+
+MissingBench is released under the [Creative Commons Attribution-NonCommercial 4.0 International](LICENSE) license (CC BY-NC 4.0), so commercial use is not permitted. Code in `legacy/`, the M3AE-derived files (AGPL-3.0) and the bundled sample brain volume (MNI ICBM152 template) are covered by their own terms, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

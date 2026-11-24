@@ -13,7 +13,7 @@ def mae_patch_gate(
     mdp: int = 3,
     device: torch.device | str | None = None,
 ) -> torch.Tensor:
-    """Voxel gate for M3AE/MCPL masked-autoencoder pretraining (1 = visible, 0 = masked).
+    """Voxel gate for M3AE masked-autoencoder pretraining (1 = visible, 0 = masked).
 
     Port of legacy ``MaskEmbeeding2`` + ``ShuffleIndex_with_MDP`` (legacy/m3ae/model/Unet.py:700-793):
     per sample, drop ``U{0..min(mdp, 3)}`` whole modalities, then keep
