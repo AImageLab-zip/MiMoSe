@@ -169,3 +169,19 @@ seed: 42
 - [README.md](../README.md)
 - [docs/yaml-config.md](yaml-config.md)
 - [docs/training.md](training.md)
+
+## Statistical Tests
+
+[scripts/wilcoxon_tests.py](../scripts/wilcoxon_tests.py) runs paired Wilcoxon signed-rank tests between models from the `*_per_subject.csv` files written by `missingbench test`. Each subject's scores are averaged over the 15 modality combinations. Subjects are pooled across cross-validation folds, or averaged over fold models when the same subjects are tested by every fold (an external cohort). Six tests are run per reference model (WT/TC/ET Dice and HD95), with Holm correction over all tests of one model:
+
+```bash
+python scripts/wilcoxon_tests.py \
+    --results-root /path/to/results \
+    --ours "MatUNet 11.4M=matunet_23_b11.4M" \
+    --refs imfuse_23 mmformer_23 rfnet_23 \
+    --folds 1,2,3,4,5 \
+    --pattern "results_fold{fold}_per_subject.csv" \
+    --out wilcoxon_brats23
+```
+
+It writes `<out>.csv` (per-test means, wins/losses, raw and Holm-adjusted p-values, verdict) and a `<out>.png`/`.pdf` summary figure.
